@@ -15,6 +15,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set lowercase owner
+        run: echo "OWNER=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -27,4 +30,4 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/notes-app:latest
+          tags: ghcr.io/${{ env.OWNER }}/notes-app:latest
