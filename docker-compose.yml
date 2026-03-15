@@ -1,0 +1,14 @@
+services:
+  notes-app:
+    image: ghcr.io/biermannek/notes-app:latest
+    container_name: notes-app
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - notes_data:/data
+    environment:
+      - DB_PATH=/data/notes.db
+
+volumes:
+  notes_data:
