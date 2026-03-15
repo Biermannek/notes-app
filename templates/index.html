@@ -4,18 +4,117 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Poznámky</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f0f2f5; color: #1a1a2e; min-height: 100vh; padding: 2rem 1rem; }
-    .container { max-width: 680px; margin: 0 auto; }
-    header { text-align: center; margin-bottom: 2rem; }
-    header h1 { font-size: 2rem; font-weight: 700; color: #1a1a2e; }
-    header p { color: #666; margin-top: 0.4rem; font-size: 0.95rem; }
-    .card { background: #fff; border-radius: 16px; padding: 1.5rem; box-shadow: 0 2px 12px rgba(0,0,0,0.08); margin-bottom: 1.5rem; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #f0f2f5;
+      color: #1a1a2e;
+      min-height: 100vh;
+      display: flex;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 220px;
+      min-height: 100vh;
+      background: #1a1a2e;
+      display: flex;
+      flex-direction: column;
+      padding: 1.5rem 0;
+      flex-shrink: 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+    }
+
+    .sidebar-brand {
+      padding: 0 1.25rem 1.5rem;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .sidebar-brand h1 { font-size: 1.2rem; font-weight: 700; color: #fff; }
+    .sidebar-brand p { font-size: 0.75rem; color: rgba(255,255,255,0.45); margin-top: 0.2rem; }
+
+    .nav { margin-top: 1rem; flex: 1; }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.7rem 1.25rem;
+      color: rgba(255,255,255,0.6);
+      font-size: 0.92rem;
+      font-weight: 500;
+      cursor: pointer;
+      border-left: 3px solid transparent;
+      transition: all 0.15s;
+      user-select: none;
+    }
+    .nav-item:hover { color: #fff; background: rgba(255,255,255,0.05); }
+    .nav-item.active {
+      color: #fff;
+      border-left-color: #6c63ff;
+      background: rgba(108,99,255,0.15);
+    }
+    .nav-icon { font-size: 1.1rem; width: 1.3rem; text-align: center; }
+
+    /* ── Main ── */
+    .main {
+      flex: 1;
+      padding: 2rem 1.5rem;
+      overflow-y: auto;
+    }
+
+    .page { display: none; max-width: 720px; margin: 0 auto; }
+    .page.active { display: block; }
+
+    .page-title {
+      font-size: 1.6rem;
+      font-weight: 700;
+      margin-bottom: 1.5rem;
+      color: #1a1a2e;
+    }
+
+    /* ── Cards ── */
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 1.5rem;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+      margin-bottom: 1.5rem;
+    }
+
     label { display: block; font-weight: 600; font-size: 1rem; margin-bottom: 0.6rem; }
-    textarea { width: 100%; padding: 0.85rem 1rem; border: 2px solid #e0e0e0; border-radius: 10px; font-size: 1rem; font-family: inherit; resize: vertical; min-height: 100px; transition: border-color 0.2s; color: #1a1a2e; }
+
+    textarea {
+      width: 100%;
+      padding: 0.85rem 1rem;
+      border: 2px solid #e0e0e0;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-family: inherit;
+      resize: vertical;
+      min-height: 100px;
+      transition: border-color 0.2s;
+      color: #1a1a2e;
+    }
     textarea:focus { outline: none; border-color: #6c63ff; }
-    .btn { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.65rem 1.25rem; border: none; border-radius: 8px; font-size: 0.92rem; font-weight: 600; cursor: pointer; transition: background 0.2s, transform 0.1s; }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.65rem 1.25rem;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.92rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+    }
     .btn:active { transform: scale(0.97); }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-primary { background: #6c63ff; color: #fff; margin-top: 0.8rem; }
@@ -26,78 +125,383 @@
     .btn-save:hover { background: #5a52d5; }
     .btn-cancel { background: #f0f2f5; color: #555; font-size: 0.8rem; padding: 0.35rem 0.75rem; }
     .btn-cancel:hover { background: #e0e2e8; }
-    .toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem; }
+
+    /* ── Notes toolbar ── */
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
     .toolbar-left { display: flex; align-items: center; gap: 0.5rem; }
     .toolbar h2 { font-size: 1.1rem; font-weight: 600; color: #444; }
     .badge { background: #6c63ff; color: #fff; border-radius: 999px; padding: 0.2rem 0.65rem; font-size: 0.8rem; font-weight: 700; }
-    .sort-controls { display: flex; align-items: center; gap: 0.4rem; }
-    .sort-select { padding: 0.35rem 0.65rem; border: 1.5px solid #e0e0e0; border-radius: 8px; font-size: 0.82rem; font-family: inherit; background: #fff; color: #333; cursor: pointer; transition: border-color 0.2s; }
+
+    .sort-controls { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+    .sort-select {
+      padding: 0.35rem 0.65rem;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-family: inherit;
+      background: #fff;
+      color: #333;
+      cursor: pointer;
+    }
     .sort-select:focus { outline: none; border-color: #6c63ff; }
-    .btn-order { padding: 0.35rem 0.65rem; border: 1.5px solid #e0e0e0; border-radius: 8px; font-size: 0.82rem; background: #fff; color: #333; cursor: pointer; transition: background 0.2s, border-color 0.2s; white-space: nowrap; }
+
+    .btn-order {
+      padding: 0.35rem 0.65rem;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      background: #fff;
+      color: #333;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
+      white-space: nowrap;
+    }
     .btn-order:hover { background: #f0f2f5; border-color: #6c63ff; }
     .btn-order.active { background: #6c63ff; color: #fff; border-color: #6c63ff; }
-    .note-item { background: #fff; border-radius: 12px; padding: 1rem 1.2rem; margin-bottom: 0.75rem; box-shadow: 0 1px 6px rgba(0,0,0,0.07); border-left: 4px solid #6c63ff; animation: fadeIn 0.3s ease; }
+
+    /* ── Note items ── */
+    .note-item {
+      background: #fff;
+      border-radius: 12px;
+      padding: 1rem 1.2rem;
+      margin-bottom: 0.75rem;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.07);
+      border-left: 4px solid #6c63ff;
+      animation: fadeIn 0.3s ease;
+    }
     .note-item.editing { border-left-color: #f59e0b; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+
     .note-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem; gap: 0.5rem; }
     .note-dates { flex: 1; }
     .note-meta { font-size: 0.78rem; color: #999; line-height: 1.5; }
     .note-meta.edited { color: #f59e0b; }
     .note-text { font-size: 0.97rem; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+
     .note-edit-area { display: none; margin-top: 0.5rem; }
     .note-edit-area textarea { min-height: 70px; font-size: 0.95rem; margin-bottom: 0.5rem; }
     .note-edit-actions { display: flex; gap: 0.4rem; }
     .note-item.editing .note-text { display: none; }
     .note-item.editing .note-edit-area { display: block; }
     .note-item.editing .btn-edit { display: none; }
+
     .empty { text-align: center; color: #aaa; padding: 2rem 0; font-size: 0.95rem; }
-    .toast { position: fixed; bottom: 1.5rem; right: 1.5rem; background: #1a1a2e; color: #fff; padding: 0.75rem 1.2rem; border-radius: 10px; font-size: 0.9rem; opacity: 0; transform: translateY(10px); transition: all 0.3s; pointer-events: none; z-index: 999; }
+
+    /* ── Statistics ── */
+    .stats-nav {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+      border-bottom: 2px solid #e0e0e0;
+      padding-bottom: 0;
+    }
+    .stats-nav-item {
+      padding: 0.6rem 1rem;
+      font-size: 0.92rem;
+      font-weight: 600;
+      color: #888;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: all 0.15s;
+    }
+    .stats-nav-item:hover { color: #6c63ff; }
+    .stats-nav-item.active { color: #6c63ff; border-bottom-color: #6c63ff; }
+
+    .stats-panel { display: none; }
+    .stats-panel.active { display: block; }
+
+    .stats-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.5rem;
+    }
+
+    .toggle-group {
+      display: flex;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .toggle-btn {
+      padding: 0.45rem 1rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      border: none;
+      background: #fff;
+      color: #555;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .toggle-btn + .toggle-btn { border-left: 1.5px solid #e0e0e0; }
+    .toggle-btn.active { background: #6c63ff; color: #fff; }
+
+    .period-group {
+      display: flex;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .period-btn {
+      padding: 0.45rem 0.9rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 8px;
+      background: #fff;
+      color: #555;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .period-btn:hover { border-color: #6c63ff; color: #6c63ff; }
+    .period-btn.active { background: #6c63ff; color: #fff; border-color: #6c63ff; }
+
+    .custom-range {
+      display: none;
+      align-items: center;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+    }
+    .custom-range.visible { display: flex; }
+    .custom-range input[type="date"] {
+      padding: 0.4rem 0.6rem;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-family: inherit;
+      color: #333;
+    }
+    .custom-range input[type="date"]:focus { outline: none; border-color: #6c63ff; }
+    .btn-apply {
+      padding: 0.45rem 0.9rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      background: #6c63ff;
+      color: #fff;
+      cursor: pointer;
+    }
+    .btn-apply:hover { background: #5a52d5; }
+
+    .chart-wrapper {
+      position: relative;
+      height: 320px;
+    }
+
+    .stats-summary {
+      display: flex;
+      gap: 1rem;
+      margin-top: 1.25rem;
+      flex-wrap: wrap;
+    }
+    .stat-box {
+      flex: 1;
+      min-width: 120px;
+      background: #f8f8ff;
+      border: 1.5px solid #e8e6ff;
+      border-radius: 12px;
+      padding: 1rem;
+      text-align: center;
+    }
+    .stat-box .stat-num { font-size: 1.8rem; font-weight: 700; color: #6c63ff; }
+    .stat-box .stat-label { font-size: 0.78rem; color: #888; margin-top: 0.2rem; }
+
+    /* ── Toast ── */
+    .toast {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      background: #1a1a2e;
+      color: #fff;
+      padding: 0.75rem 1.2rem;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: all 0.3s;
+      pointer-events: none;
+      z-index: 999;
+    }
     .toast.show { opacity: 1; transform: translateY(0); }
+
+    /* ── Responsive ── */
+    @media (max-width: 600px) {
+      body { flex-direction: column; }
+      .sidebar { width: 100%; min-height: auto; height: auto; position: static; flex-direction: row; padding: 0; align-items: center; }
+      .sidebar-brand { padding: 0.75rem 1rem; border-bottom: none; border-right: 1px solid rgba(255,255,255,0.08); }
+      .sidebar-brand p { display: none; }
+      .nav { display: flex; flex-direction: row; margin-top: 0; }
+      .nav-item { border-left: none; border-bottom: 3px solid transparent; padding: 0.75rem 1rem; }
+      .nav-item.active { border-left-color: transparent; border-bottom-color: #6c63ff; }
+      .main { padding: 1rem; }
+    }
   </style>
 </head>
 <body>
-<div class="container">
-  <header>
+
+<!-- Sidebar -->
+<nav class="sidebar">
+  <div class="sidebar-brand">
     <h1>📝 Poznámky</h1>
-    <p>Jednoduché zápisky vždy po ruce</p>
-  </header>
-  <div class="card">
-    <label for="noteInput">Co si chceš poznamenat?</label>
-    <textarea id="noteInput" placeholder="Napiš svou poznámku..."></textarea>
-    <button class="btn btn-primary" id="saveBtn" onclick="saveNote()">＋ Uložit poznámku</button>
+    <p>Zápisky vždy po ruce</p>
   </div>
-  <div class="toolbar">
-    <div class="toolbar-left">
-      <h2>Uložené poznámky</h2>
-      <span class="badge" id="countBadge">0</span>
+  <div class="nav">
+    <div class="nav-item active" onclick="showPage('notes')" id="nav-notes">
+      <span class="nav-icon">📋</span> Poznámky
     </div>
-    <div class="sort-controls">
-      <select class="sort-select" id="sortBy" onchange="loadNotes()">
-        <option value="created_at">Datum vytvoření</option>
-        <option value="updated_at">Datum editace</option>
-      </select>
-      <button class="btn-order active" id="btnDesc" onclick="setOrder('desc')">↓ Nejnovější</button>
-      <button class="btn-order" id="btnAsc" onclick="setOrder('asc')">↑ Nejstarší</button>
+    <div class="nav-item" onclick="showPage('stats')" id="nav-stats">
+      <span class="nav-icon">📊</span> Statistiky
     </div>
   </div>
-  <div id="notesList"></div>
-</div>
+</nav>
+
+<!-- Main content -->
+<main class="main">
+
+  <!-- PAGE: Poznámky -->
+  <div class="page active" id="page-notes">
+    <h2 class="page-title">Poznámky</h2>
+
+    <div class="card">
+      <label for="noteInput">Co si chceš poznamenat?</label>
+      <textarea id="noteInput" placeholder="Napiš svou poznámku..."></textarea>
+      <button class="btn btn-primary" id="saveBtn" onclick="saveNote()">＋ Uložit poznámku</button>
+    </div>
+
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <h2>Uložené poznámky</h2>
+        <span class="badge" id="countBadge">0</span>
+      </div>
+      <div class="sort-controls">
+        <select class="sort-select" id="sortBy" onchange="loadNotes()">
+          <option value="created_at">Datum vytvoření</option>
+          <option value="updated_at">Datum editace</option>
+        </select>
+        <button class="btn-order active" id="btnDesc" onclick="setOrder('desc')">↓ Nejnovější</button>
+        <button class="btn-order" id="btnAsc" onclick="setOrder('asc')">↑ Nejstarší</button>
+      </div>
+    </div>
+
+    <div id="notesList"></div>
+  </div>
+
+  <!-- PAGE: Statistiky -->
+  <div class="page" id="page-stats">
+    <h2 class="page-title">Statistiky</h2>
+
+    <!-- Sub-navigace statistik -->
+    <div class="stats-nav">
+      <div class="stats-nav-item active" onclick="showStatsPanel('daily')" id="statnav-daily">
+        📅 Poznámky dle dní
+      </div>
+    </div>
+
+    <!-- Panel: Poznámky dle dní -->
+    <div class="stats-panel active" id="statpanel-daily">
+      <div class="card">
+        <div class="stats-controls">
+
+          <!-- Typ: Vytvořené / Editované -->
+          <div class="toggle-group">
+            <button class="toggle-btn active" id="type-created" onclick="setStatType('created')">Vytvořené</button>
+            <button class="toggle-btn" id="type-edited" onclick="setStatType('edited')">Editované</button>
+          </div>
+
+          <!-- Období -->
+          <div class="period-group">
+            <button class="period-btn active" id="period-7" onclick="setPeriod(7)">7 dní</button>
+            <button class="period-btn" id="period-30" onclick="setPeriod(30)">30 dní</button>
+            <button class="period-btn" id="period-custom" onclick="setPeriod('custom')">Vlastní</button>
+          </div>
+
+          <!-- Vlastní interval -->
+          <div class="custom-range" id="customRange">
+            <span style="font-size:0.85rem;color:#555;">Od</span>
+            <input type="date" id="dateFrom" />
+            <span style="font-size:0.85rem;color:#555;">Do</span>
+            <input type="date" id="dateTo" />
+            <button class="btn-apply" onclick="loadDailyStats()">Zobrazit</button>
+          </div>
+
+        </div>
+
+        <div class="chart-wrapper">
+          <canvas id="dailyChart"></canvas>
+        </div>
+
+        <div class="stats-summary">
+          <div class="stat-box">
+            <div class="stat-num" id="stat-total">0</div>
+            <div class="stat-label">Celkem za období</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-num" id="stat-avg">0</div>
+            <div class="stat-label">Průměr za den</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-num" id="stat-max">0</div>
+            <div class="stat-label">Maximum za den</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
 <div class="toast" id="toast"></div>
+
 <script>
+  // ── Navigace ──
   let currentOrder = 'desc';
+  let currentStatType = 'created';
+  let currentPeriod = 7;
+  let dailyChart = null;
+
+  function showPage(page) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.getElementById('page-' + page).classList.add('active');
+    document.getElementById('nav-' + page).classList.add('active');
+    if (page === 'stats') loadDailyStats();
+  }
+
+  function showStatsPanel(panel) {
+    document.querySelectorAll('.stats-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.stats-nav-item').forEach(n => n.classList.remove('active'));
+    document.getElementById('statpanel-' + panel).classList.add('active');
+    document.getElementById('statnav-' + panel).classList.add('active');
+  }
+
+  // ── Poznámky ──
   function setOrder(order) {
     currentOrder = order;
     document.getElementById('btnDesc').classList.toggle('active', order === 'desc');
     document.getElementById('btnAsc').classList.toggle('active', order === 'asc');
     loadNotes();
   }
+
   async function loadNotes() {
     const sortBy = document.getElementById('sortBy').value;
     const res = await fetch(`/api/notes?sort_by=${sortBy}&order=${currentOrder}`);
     const notes = await res.json();
     document.getElementById('countBadge').textContent = notes.length;
     const list = document.getElementById('notesList');
-    if (notes.length === 0) { list.innerHTML = '<p class="empty">Zatím žádné poznámky. Přidej první! 👆</p>'; return; }
+    if (notes.length === 0) {
+      list.innerHTML = '<p class="empty">Zatím žádné poznámky. Přidej první! 👆</p>';
+      return;
+    }
     list.innerHTML = notes.map(n => `
       <div class="note-item" id="note-${n.id}">
         <div class="note-header">
@@ -118,6 +522,7 @@
       </div>
     `).join('');
   }
+
   async function saveNote() {
     const input = document.getElementById('noteInput');
     const btn = document.getElementById('saveBtn');
@@ -125,10 +530,15 @@
     if (!text) { showToast('Poznámka nesmí být prázdná!'); return; }
     btn.disabled = true;
     try {
-      const res = await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+      const res = await fetch('/api/notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+      });
       if (res.ok) { input.value = ''; await loadNotes(); showToast('✓ Poznámka uložena'); }
     } finally { btn.disabled = false; input.focus(); }
   }
+
   function startEdit(id) {
     const item = document.getElementById(`note-${id}`);
     item.classList.add('editing');
@@ -137,23 +547,158 @@
     ta.focus();
     ta.setSelectionRange(ta.value.length, ta.value.length);
   }
-  function cancelEdit(id) { document.getElementById(`note-${id}`).classList.remove('editing'); }
+
+  function cancelEdit(id) {
+    document.getElementById(`note-${id}`).classList.remove('editing');
+  }
+
   async function saveEdit(id) {
     const ta = document.getElementById(`edit-${id}`);
     const text = ta.value.trim();
     if (!text) { showToast('Text nesmí být prázdný!'); return; }
-    const res = await fetch(`/api/notes/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+    const res = await fetch(`/api/notes/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
+    });
     if (res.ok) { await loadNotes(); showToast('✓ Poznámka upravena'); }
     else { showToast('Chyba při ukládání!'); }
   }
-  document.getElementById('noteInput').addEventListener('keydown', e => { if (e.ctrlKey && e.key === 'Enter') saveNote(); });
+
+  document.getElementById('noteInput').addEventListener('keydown', e => {
+    if (e.ctrlKey && e.key === 'Enter') saveNote();
+  });
+
+  // ── Statistiky ──
+  function setStatType(type) {
+    currentStatType = type;
+    document.getElementById('type-created').classList.toggle('active', type === 'created');
+    document.getElementById('type-edited').classList.toggle('active', type === 'edited');
+    loadDailyStats();
+  }
+
+  function setPeriod(period) {
+    currentPeriod = period;
+    document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById(`period-${period}`).classList.add('active');
+    const customRange = document.getElementById('customRange');
+    if (period === 'custom') {
+      customRange.classList.add('visible');
+      // Nastav výchozí datum pro vlastní interval
+      const today = new Date();
+      const from = new Date(today);
+      from.setDate(from.getDate() - 29);
+      document.getElementById('dateFrom').value = from.toISOString().slice(0, 10);
+      document.getElementById('dateTo').value = today.toISOString().slice(0, 10);
+    } else {
+      customRange.classList.remove('visible');
+      loadDailyStats();
+    }
+  }
+
+  async function loadDailyStats() {
+    let url = `/api/stats/daily?type=${currentStatType}`;
+    if (currentPeriod === 'custom') {
+      const from = document.getElementById('dateFrom').value;
+      const to = document.getElementById('dateTo').value;
+      if (!from || !to) return;
+      url += `&from=${from}&to=${to}`;
+    } else {
+      url += `&days=${currentPeriod}`;
+    }
+
+    const res = await fetch(url);
+    const json = await res.json();
+    renderDailyChart(json);
+  }
+
+  function renderDailyChart(json) {
+    const labels = json.data.map(d => {
+      const dt = new Date(d.day + 'T00:00:00');
+      return dt.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit' });
+    });
+    const values = json.data.map(d => d.count);
+    const total = values.reduce((a, b) => a + b, 0);
+    const avg = values.length ? (total / values.length).toFixed(1) : 0;
+    const max = values.length ? Math.max(...values) : 0;
+
+    document.getElementById('stat-total').textContent = total;
+    document.getElementById('stat-avg').textContent = avg;
+    document.getElementById('stat-max').textContent = max;
+
+    const label = json.type === 'created' ? 'Vytvořené poznámky' : 'Editované poznámky';
+    const color = json.type === 'created' ? '#6c63ff' : '#f59e0b';
+    const colorAlpha = json.type === 'created' ? 'rgba(108,99,255,0.15)' : 'rgba(245,158,11,0.15)';
+
+    if (dailyChart) dailyChart.destroy();
+    const ctx = document.getElementById('dailyChart').getContext('2d');
+    dailyChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label,
+          data: values,
+          backgroundColor: colorAlpha,
+          borderColor: color,
+          borderWidth: 2,
+          borderRadius: 6,
+          borderSkipped: false,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              title: (items) => {
+                const idx = items[0].dataIndex;
+                return json.data[idx].day;
+              },
+              label: (item) => ` ${item.raw} ${item.raw === 1 ? 'poznámka' : item.raw < 5 ? 'poznámky' : 'poznámek'}`
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            ticks: { font: { size: 11 } }
+          },
+          y: {
+            beginAtZero: true,
+            ticks: {
+              stepSize: 1,
+              font: { size: 11 },
+              callback: v => Number.isInteger(v) ? v : null
+            },
+            grid: { color: 'rgba(0,0,0,0.05)' }
+          }
+        }
+      }
+    });
+  }
+
+  // ── Helpers ──
   function formatDate(str) {
     if (!str) return '—';
     const d = new Date(str.includes('T') ? str : str.replace(' ', 'T'));
     return d.toLocaleString('cs-CZ', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   }
-  function escapeHtml(t) { return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-  function showToast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2500); }
+
+  function escapeHtml(t) {
+    return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2500);
+  }
+
+  // Init
   loadNotes();
 </script>
 </body>
