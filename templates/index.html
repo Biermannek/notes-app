@@ -12,68 +12,149 @@
     header h1 { font-size: 2rem; font-weight: 700; color: #1a1a2e; }
     header p { color: #666; margin-top: 0.4rem; font-size: 0.95rem; }
     .card { background: #fff; border-radius: 16px; padding: 1.5rem; box-shadow: 0 2px 12px rgba(0,0,0,0.08); margin-bottom: 1.5rem; }
-    label { display: block; font-weight: 600; font-size: 1rem; margin-bottom: 0.6rem; color: #1a1a2e; }
+    label { display: block; font-weight: 600; font-size: 1rem; margin-bottom: 0.6rem; }
     textarea { width: 100%; padding: 0.85rem 1rem; border: 2px solid #e0e0e0; border-radius: 10px; font-size: 1rem; font-family: inherit; resize: vertical; min-height: 100px; transition: border-color 0.2s; color: #1a1a2e; }
     textarea:focus { outline: none; border-color: #6c63ff; }
-    .btn { display: inline-flex; align-items: center; gap: 0.4rem; margin-top: 0.8rem; padding: 0.75rem 1.5rem; background: #6c63ff; color: #fff; border: none; border-radius: 10px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background 0.2s, transform 0.1s; }
-    .btn:hover { background: #5a52d5; }
+    .btn { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.65rem 1.25rem; border: none; border-radius: 8px; font-size: 0.92rem; font-weight: 600; cursor: pointer; transition: background 0.2s, transform 0.1s; }
     .btn:active { transform: scale(0.97); }
-    .btn:disabled { background: #b0aae8; cursor: not-allowed; }
-    .notes-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
-    .notes-header h2 { font-size: 1.1rem; font-weight: 600; color: #444; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: #6c63ff; color: #fff; margin-top: 0.8rem; }
+    .btn-primary:hover { background: #5a52d5; }
+    .btn-edit { background: #f0f2f5; color: #555; font-size: 0.8rem; padding: 0.35rem 0.75rem; }
+    .btn-edit:hover { background: #e0e2e8; }
+    .btn-save { background: #6c63ff; color: #fff; font-size: 0.8rem; padding: 0.35rem 0.75rem; }
+    .btn-save:hover { background: #5a52d5; }
+    .btn-cancel { background: #f0f2f5; color: #555; font-size: 0.8rem; padding: 0.35rem 0.75rem; }
+    .btn-cancel:hover { background: #e0e2e8; }
+    .toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem; }
+    .toolbar-left { display: flex; align-items: center; gap: 0.5rem; }
+    .toolbar h2 { font-size: 1.1rem; font-weight: 600; color: #444; }
     .badge { background: #6c63ff; color: #fff; border-radius: 999px; padding: 0.2rem 0.65rem; font-size: 0.8rem; font-weight: 700; }
+    .sort-controls { display: flex; align-items: center; gap: 0.4rem; }
+    .sort-select { padding: 0.35rem 0.65rem; border: 1.5px solid #e0e0e0; border-radius: 8px; font-size: 0.82rem; font-family: inherit; background: #fff; color: #333; cursor: pointer; transition: border-color 0.2s; }
+    .sort-select:focus { outline: none; border-color: #6c63ff; }
+    .btn-order { padding: 0.35rem 0.65rem; border: 1.5px solid #e0e0e0; border-radius: 8px; font-size: 0.82rem; background: #fff; color: #333; cursor: pointer; transition: background 0.2s, border-color 0.2s; white-space: nowrap; }
+    .btn-order:hover { background: #f0f2f5; border-color: #6c63ff; }
+    .btn-order.active { background: #6c63ff; color: #fff; border-color: #6c63ff; }
     .note-item { background: #fff; border-radius: 12px; padding: 1rem 1.2rem; margin-bottom: 0.75rem; box-shadow: 0 1px 6px rgba(0,0,0,0.07); border-left: 4px solid #6c63ff; animation: fadeIn 0.3s ease; }
+    .note-item.editing { border-left-color: #f59e0b; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
-    .note-meta { font-size: 0.78rem; color: #999; margin-bottom: 0.4rem; }
+    .note-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem; gap: 0.5rem; }
+    .note-dates { flex: 1; }
+    .note-meta { font-size: 0.78rem; color: #999; line-height: 1.5; }
+    .note-meta.edited { color: #f59e0b; }
     .note-text { font-size: 0.97rem; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+    .note-edit-area { display: none; margin-top: 0.5rem; }
+    .note-edit-area textarea { min-height: 70px; font-size: 0.95rem; margin-bottom: 0.5rem; }
+    .note-edit-actions { display: flex; gap: 0.4rem; }
+    .note-item.editing .note-text { display: none; }
+    .note-item.editing .note-edit-area { display: block; }
+    .note-item.editing .btn-edit { display: none; }
     .empty { text-align: center; color: #aaa; padding: 2rem 0; font-size: 0.95rem; }
     .toast { position: fixed; bottom: 1.5rem; right: 1.5rem; background: #1a1a2e; color: #fff; padding: 0.75rem 1.2rem; border-radius: 10px; font-size: 0.9rem; opacity: 0; transform: translateY(10px); transition: all 0.3s; pointer-events: none; z-index: 999; }
     .toast.show { opacity: 1; transform: translateY(0); }
   </style>
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h1>📝 Poznámky</h1>
-      <p>Jednoduché zápisky vždy po ruce</p>
-    </header>
-    <div class="card">
-      <label for="noteInput">Co si chceš poznamenat?</label>
-      <textarea id="noteInput" placeholder="Napiš svou poznámku..."></textarea>
-      <button class="btn" id="saveBtn" onclick="saveNote()">＋ Uložit poznámku</button>
-    </div>
-    <div class="notes-header">
+<div class="container">
+  <header>
+    <h1>📝 Poznámky</h1>
+    <p>Jednoduché zápisky vždy po ruce</p>
+  </header>
+  <div class="card">
+    <label for="noteInput">Co si chceš poznamenat?</label>
+    <textarea id="noteInput" placeholder="Napiš svou poznámku..."></textarea>
+    <button class="btn btn-primary" id="saveBtn" onclick="saveNote()">＋ Uložit poznámku</button>
+  </div>
+  <div class="toolbar">
+    <div class="toolbar-left">
       <h2>Uložené poznámky</h2>
       <span class="badge" id="countBadge">0</span>
     </div>
-    <div id="notesList"></div>
+    <div class="sort-controls">
+      <select class="sort-select" id="sortBy" onchange="loadNotes()">
+        <option value="created_at">Datum vytvoření</option>
+        <option value="updated_at">Datum editace</option>
+      </select>
+      <button class="btn-order active" id="btnDesc" onclick="setOrder('desc')">↓ Nejnovější</button>
+      <button class="btn-order" id="btnAsc" onclick="setOrder('asc')">↑ Nejstarší</button>
+    </div>
   </div>
-  <div class="toast" id="toast"></div>
-  <script>
-    async function loadNotes() {
-      const res = await fetch('/api/notes');
-      const notes = await res.json();
-      document.getElementById('countBadge').textContent = notes.length;
-      const list = document.getElementById('notesList');
-      if (notes.length === 0) { list.innerHTML = '<p class="empty">Zatím žádné poznámky. Přidej první! 👆</p>'; return; }
-      list.innerHTML = notes.map(n => `<div class="note-item"><div class="note-meta">🕐 ${formatDate(n.created_at)}</div><div class="note-text">${escapeHtml(n.text)}</div></div>`).join('');
-    }
-    async function saveNote() {
-      const input = document.getElementById('noteInput');
-      const btn = document.getElementById('saveBtn');
-      const text = input.value.trim();
-      if (!text) { showToast('Poznámka nesmí být prázdná!'); return; }
-      btn.disabled = true;
-      try {
-        const res = await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
-        if (res.ok) { input.value = ''; await loadNotes(); showToast('✓ Poznámka uložena'); }
-      } finally { btn.disabled = false; input.focus(); }
-    }
-    document.getElementById('noteInput').addEventListener('keydown', e => { if (e.ctrlKey && e.key === 'Enter') saveNote(); });
-    function formatDate(str) { const d = new Date(str.includes('T') ? str : str.replace(' ', 'T')); return d.toLocaleString('cs-CZ', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
-    function escapeHtml(t) { return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-    function showToast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2500); }
+  <div id="notesList"></div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+  let currentOrder = 'desc';
+  function setOrder(order) {
+    currentOrder = order;
+    document.getElementById('btnDesc').classList.toggle('active', order === 'desc');
+    document.getElementById('btnAsc').classList.toggle('active', order === 'asc');
     loadNotes();
-  </script>
+  }
+  async function loadNotes() {
+    const sortBy = document.getElementById('sortBy').value;
+    const res = await fetch(`/api/notes?sort_by=${sortBy}&order=${currentOrder}`);
+    const notes = await res.json();
+    document.getElementById('countBadge').textContent = notes.length;
+    const list = document.getElementById('notesList');
+    if (notes.length === 0) { list.innerHTML = '<p class="empty">Zatím žádné poznámky. Přidej první! 👆</p>'; return; }
+    list.innerHTML = notes.map(n => `
+      <div class="note-item" id="note-${n.id}">
+        <div class="note-header">
+          <div class="note-dates">
+            <div class="note-meta">🕐 Vytvořeno: ${formatDate(n.created_at)}</div>
+            ${n.updated_at ? `<div class="note-meta edited">✏️ Editováno: ${formatDate(n.updated_at)}</div>` : ''}
+          </div>
+          <button class="btn btn-edit" onclick="startEdit(${n.id})">✏️ Upravit</button>
+        </div>
+        <div class="note-text">${escapeHtml(n.text)}</div>
+        <div class="note-edit-area">
+          <textarea id="edit-${n.id}">${escapeHtml(n.text)}</textarea>
+          <div class="note-edit-actions">
+            <button class="btn btn-save" onclick="saveEdit(${n.id})">✓ Uložit</button>
+            <button class="btn btn-cancel" onclick="cancelEdit(${n.id})">✕ Zrušit</button>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }
+  async function saveNote() {
+    const input = document.getElementById('noteInput');
+    const btn = document.getElementById('saveBtn');
+    const text = input.value.trim();
+    if (!text) { showToast('Poznámka nesmí být prázdná!'); return; }
+    btn.disabled = true;
+    try {
+      const res = await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+      if (res.ok) { input.value = ''; await loadNotes(); showToast('✓ Poznámka uložena'); }
+    } finally { btn.disabled = false; input.focus(); }
+  }
+  function startEdit(id) {
+    const item = document.getElementById(`note-${id}`);
+    item.classList.add('editing');
+    const ta = document.getElementById(`edit-${id}`);
+    ta.value = item.querySelector('.note-text').textContent;
+    ta.focus();
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+  }
+  function cancelEdit(id) { document.getElementById(`note-${id}`).classList.remove('editing'); }
+  async function saveEdit(id) {
+    const ta = document.getElementById(`edit-${id}`);
+    const text = ta.value.trim();
+    if (!text) { showToast('Text nesmí být prázdný!'); return; }
+    const res = await fetch(`/api/notes/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+    if (res.ok) { await loadNotes(); showToast('✓ Poznámka upravena'); }
+    else { showToast('Chyba při ukládání!'); }
+  }
+  document.getElementById('noteInput').addEventListener('keydown', e => { if (e.ctrlKey && e.key === 'Enter') saveNote(); });
+  function formatDate(str) {
+    if (!str) return '—';
+    const d = new Date(str.includes('T') ? str : str.replace(' ', 'T'));
+    return d.toLocaleString('cs-CZ', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
+  function escapeHtml(t) { return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function showToast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2500); }
+  loadNotes();
+</script>
 </body>
 </html>
