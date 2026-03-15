@@ -27,6 +27,10 @@ def init_db():
     conn.close()
 
 
+# Inicializace DB při startu (funguje i s gunicorn)
+init_db()
+
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -61,5 +65,4 @@ def add_note():
 
 
 if __name__ == '__main__':
-    init_db()
     app.run(host='0.0.0.0', port=5000)
