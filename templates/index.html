@@ -95,6 +95,12 @@
     /* ── Note items ── */
     .note-item{background:#fff;border-radius:12px;padding:1rem 1.2rem;margin-bottom:.75rem;box-shadow:0 1px 6px rgba(0,0,0,.07);border-left:4px solid #6c63ff;animation:fadeIn .3s ease}
     .note-item.editing{border-left-color:#f59e0b}
+    .note-item.pinned{border-left-color:#f59e0b;background:#fffdf5}
+    .btn-pin{background:transparent;color:#ccc;font-size:1rem;padding:.2rem .4rem;border:none;border-radius:6px;cursor:pointer;transition:background .15s,color .15s;line-height:1;flex-shrink:0}
+    .btn-pin:hover{background:#fef3c7;color:#d97706}
+    .btn-pin.active{color:#d97706}
+    .notes-section-sep{display:flex;align-items:center;gap:.6rem;margin:.25rem 0 .6rem;font-size:.78rem;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.05em}
+    .notes-section-sep::after{content:'';flex:1;height:1px;background:#e5e7eb}
     @keyframes fadeIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
     .note-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.45rem;gap:.5rem}
     .note-dates{flex:1}
@@ -459,18 +465,22 @@ async function loadNotes() {
   document.getElementById('countBadge').textContent = notes.length;
   const list = document.getElementById('notesList');
   if (!notes.length) { list.innerHTML = '<p class="empty">Žádné poznámky. Přidej první! 👆</p>'; return; }
-  list.innerHTML = notes.map(n => {
+  const pinned   = notes.filter(n => n.is_pinned);
+  const unpinned = notes.filter(n => !n.is_pinned);
+  const hasBoth  = pinned.length > 0 && unpinned.length > 0;
+  function noteHtml(n) {
     const tagHtml = (n.tags || []).map(t => {
       const s = tagStyle(t);
       return `<span class="tag-chip" style="background:${s.bg};color:${s.color};cursor:pointer"
                     onclick="addFilterTag('${t}')" title="Filtrovat dle #${t}">#${t}</span>`;
     }).join('');
-    return `<div class="note-item" id="note-${n.id}">
+    return `<div class="note-item${n.is_pinned ? ' pinned' : ''}" id="note-${n.id}">
       <div class="note-header">
         <div class="note-dates">
           <div class="note-meta">🕐 Vytvořeno: ${fmt(n.created_at)}</div>
           ${n.updated_at ? `<div class="note-meta edited">✏️ Editováno: ${fmt(n.updated_at)}</div>` : ''}
         </div>
+        <button class="btn-pin${n.is_pinned ? ' active' : ''}" onclick="togglePin(${n.id})" title="${n.is_pinned ? 'Odepnout' : 'Připnout'}">📌</button>
         <button class="btn btn-edit" onclick="startEdit(${n.id})">✏️ Upravit</button>
       </div>
       <div class="note-text">${esc(n.text)}</div>
@@ -490,7 +500,13 @@ async function loadNotes() {
         </div>
       </div>
     </div>`;
-  }).join('');
+  }
+  let html = '';
+  if (hasBoth) html += '<div class="notes-section-sep">📌 Připnuté</div>';
+  html += pinned.map(noteHtml).join('');
+  if (hasBoth) html += '<div class="notes-section-sep" style="margin-top:.5rem">Ostatní poznámky</div>';
+  html += unpinned.map(noteHtml).join('');
+  list.innerHTML = html;
   // Inicializuj tag komponenty pro editaci
   notes.forEach(n => {
     makeTagInputComponent(`editTagWrap${n.id}`,`editTagChips${n.id}`,`editTagInput${n.id}`,`editTagDropdown${n.id}`);
@@ -503,6 +519,15 @@ async function loadNotes() {
       });
     }
   });
+}
+
+async function togglePin(id) {
+  const res = await fetch(`/api/notes/${id}/pin`, { method: 'PUT' });
+  if (res.ok) {
+    const note = await res.json();
+    await loadNotes();
+    showToast(note.is_pinned ? '📌 Poznámka připnuta' : '📌 Poznámka odepnuta');
+  }
 }
 
 async function saveNote() {

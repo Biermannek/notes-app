@@ -22,7 +22,8 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         text TEXT NOT NULL,
         created_at DATETIME DEFAULT (datetime('now', 'localtime')),
-        updated_at DATETIME)''')
+        updated_at DATETIME,
+        is_pinned INTEGER NOT NULL DEFAULT 0)''')
     conn.execute('''CREATE TABLE IF NOT EXISTS tags (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT UNIQUE NOT NULL)''')
@@ -32,10 +33,15 @@ def init_db():
         PRIMARY KEY (note_id, tag_id),
         FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE,
         FOREIGN KEY (tag_id)  REFERENCES tags(id)  ON DELETE CASCADE)''')
-    try:
-        conn.execute('ALTER TABLE notes ADD COLUMN updated_at DATETIME')
-    except sqlite3.OperationalError:
-        pass
+    # Migrace starších DB
+    for col, definition in [
+        ('updated_at', 'DATETIME'),
+        ('is_pinned',  'INTEGER NOT NULL DEFAULT 0'),
+    ]:
+        try:
+            conn.execute(f'ALTER TABLE notes ADD COLUMN {col} {definition}')
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     conn.close()
 
@@ -46,7 +52,6 @@ init_db()
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 def save_tags_for_note(conn, note_id, tag_names):
-    """Uloží tagy pro poznámku (přepíše stávající)."""
     conn.execute('DELETE FROM note_tags WHERE note_id = ?', (note_id,))
     for raw in tag_names:
         name = raw.strip().lower()
@@ -55,12 +60,10 @@ def save_tags_for_note(conn, note_id, tag_names):
         conn.execute('INSERT OR IGNORE INTO tags (name) VALUES (?)', (name,))
         tag_id = conn.execute('SELECT id FROM tags WHERE name = ?', (name,)).fetchone()['id']
         conn.execute('INSERT OR IGNORE INTO note_tags (note_id, tag_id) VALUES (?, ?)', (note_id, tag_id))
-    # Smaž tagy, které už nikde nejsou použity
     conn.execute('DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM note_tags)')
 
 
 def get_tags_for_notes(conn, note_ids):
-    """Vrátí slovník note_id → [tag_name, ...]"""
     if not note_ids:
         return {}
     ph = ','.join('?' * len(note_ids))
@@ -73,6 +76,10 @@ def get_tags_for_notes(conn, note_ids):
     for row in rows:
         result.setdefault(row['note_id'], []).append(row['name'])
     return result
+
+
+def note_select():
+    return 'SELECT n.id, n.text, n.created_at, n.updated_at, n.is_pinned FROM notes n'
 
 
 # ── routes ────────────────────────────────────────────────────────────────────
@@ -114,39 +121,33 @@ def get_notes():
     if order    not in ('asc', 'desc'):              order   = 'desc'
     if tag_mode not in ('or', 'and'):                tag_mode = 'or'
 
-    order_clause = (f'COALESCE(n.updated_at, n.created_at) {order}'
-                    if sort_by == 'updated_at' else f'n.created_at {order}')
+    # Připnuté vždy první, pak řazení dle zvoleného kritéria
+    secondary = (f'COALESCE(n.updated_at, n.created_at) {order}'
+                 if sort_by == 'updated_at' else f'n.created_at {order}')
+    order_clause = f'n.is_pinned DESC, {secondary}'
 
     tag_list = [t.strip().lower() for t in tags_raw.split(',') if t.strip()]
+    sel = note_select()
 
     conn = get_db()
     if tag_list:
         ph = ','.join('?' * len(tag_list))
         if tag_mode == 'and':
-            query = (
-                f'SELECT DISTINCT n.id, n.text, n.created_at, n.updated_at FROM notes n '
-                f'JOIN note_tags nt ON n.id = nt.note_id '
-                f'JOIN tags t ON nt.tag_id = t.id '
-                f'WHERE t.name IN ({ph}) '
-                f'GROUP BY n.id HAVING COUNT(DISTINCT t.name) = {len(tag_list)} '
-                f'ORDER BY {order_clause}'
-            )
+            query = (f'{sel} JOIN note_tags nt ON n.id = nt.note_id '
+                     f'JOIN tags t ON nt.tag_id = t.id '
+                     f'WHERE t.name IN ({ph}) '
+                     f'GROUP BY n.id HAVING COUNT(DISTINCT t.name) = {len(tag_list)} '
+                     f'ORDER BY {order_clause}')
         else:
-            query = (
-                f'SELECT DISTINCT n.id, n.text, n.created_at, n.updated_at FROM notes n '
-                f'JOIN note_tags nt ON n.id = nt.note_id '
-                f'JOIN tags t ON nt.tag_id = t.id '
-                f'WHERE t.name IN ({ph}) ORDER BY {order_clause}'
-            )
+            query = (f'{sel} JOIN note_tags nt ON n.id = nt.note_id '
+                     f'JOIN tags t ON nt.tag_id = t.id '
+                     f'WHERE t.name IN ({ph}) ORDER BY {order_clause}')
         rows = conn.execute(query, tag_list).fetchall()
     else:
-        rows = conn.execute(
-            f'SELECT id, n.id, n.text, n.created_at, n.updated_at FROM notes n ORDER BY {order_clause}'
-            .replace('SELECT id, n.id', 'SELECT n.id')
-        ).fetchall()
+        rows = conn.execute(f'{sel} ORDER BY {order_clause}').fetchall()
 
-    note_ids  = [r['id'] for r in rows]
-    tags_map  = get_tags_for_notes(conn, note_ids)
+    note_ids = [r['id'] for r in rows]
+    tags_map = get_tags_for_notes(conn, note_ids)
     conn.close()
 
     result = []
@@ -167,7 +168,7 @@ def add_note():
     note_id = cursor.lastrowid
     save_tags_for_note(conn, note_id, data.get('tags', []))
     conn.commit()
-    row  = conn.execute('SELECT id, text, created_at, updated_at FROM notes WHERE id = ?', (note_id,)).fetchone()
+    row  = conn.execute(f'{note_select()} WHERE n.id = ?', (note_id,)).fetchone()
     tags = get_tags_for_notes(conn, [note_id]).get(note_id, [])
     conn.close()
     result = dict(row); result['tags'] = tags
@@ -189,11 +190,26 @@ def update_note(note_id):
         return jsonify({'error': 'Poznámka nenalezena'}), 404
     save_tags_for_note(conn, note_id, data.get('tags', []))
     conn.commit()
-    row  = conn.execute('SELECT id, text, created_at, updated_at FROM notes WHERE id = ?', (note_id,)).fetchone()
+    row  = conn.execute(f'{note_select()} WHERE n.id = ?', (note_id,)).fetchone()
     tags = get_tags_for_notes(conn, [note_id]).get(note_id, [])
     conn.close()
     result = dict(row); result['tags'] = tags
     return jsonify(result)
+
+
+@app.route('/api/notes/<int:note_id>/pin', methods=['PUT'])
+def toggle_pin(note_id):
+    conn = get_db()
+    res = conn.execute(
+        'UPDATE notes SET is_pinned = 1 - is_pinned WHERE id = ?', (note_id,)
+    )
+    if res.rowcount == 0:
+        conn.close()
+        return jsonify({'error': 'Poznámka nenalezena'}), 404
+    conn.commit()
+    row = conn.execute(f'{note_select()} WHERE n.id = ?', (note_id,)).fetchone()
+    conn.close()
+    return jsonify(dict(row))
 
 
 @app.route('/api/stats/daily', methods=['GET'])
