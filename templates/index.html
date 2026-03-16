@@ -96,6 +96,8 @@
     .note-item{background:#fff;border-radius:12px;padding:1rem 1.2rem;margin-bottom:.75rem;box-shadow:0 1px 6px rgba(0,0,0,.07);border-left:4px solid #6c63ff;animation:fadeIn .3s ease}
     .note-item.editing{border-left-color:#f59e0b}
     .note-item.pinned{border-left-color:#f59e0b;background:#fffdf5}
+    .note-actions{display:flex;align-items:center;gap:.35rem;flex-shrink:0;opacity:0;transition:opacity .2s}
+    .note-item:hover .note-actions,.note-item.editing .note-actions{opacity:1}
     .btn-pin{background:transparent;font-size:1rem;padding:.2rem .4rem;border:none;border-radius:6px;cursor:pointer;line-height:1;flex-shrink:0;filter:grayscale(1) opacity(.3);transition:filter .15s,background .15s}
     .btn-pin:hover{background:#fef3c7;filter:grayscale(0) opacity(.7)}
     .btn-pin.active{filter:none}
@@ -116,6 +118,11 @@
     .note-item.editing .note-edit-area{display:block}
     .note-item.editing .btn-edit{display:none}
     .empty{text-align:center;color:#aaa;padding:2rem 0;font-size:.95rem}
+
+    /* ── Format toolbar ── */
+    .format-toolbar{display:flex;gap:.3rem;margin-bottom:.45rem}
+    .fmt-btn{padding:.18rem .52rem;border:1.5px solid #e0e0e0;border-radius:6px;background:#fff;color:#444;font-size:.85rem;cursor:pointer;line-height:1.4;transition:background .15s,border-color .15s;font-family:Georgia,serif}
+    .fmt-btn:hover{background:#f0f2f5;border-color:#6c63ff;color:#6c63ff}
 
     /* ── Stats ── */
     .stats-nav{display:flex;gap:.5rem;margin-bottom:1.5rem;border-bottom:2px solid #e0e0e0;padding-bottom:0}
@@ -189,6 +196,12 @@
 
     <div class="card">
       <label for="noteInput">Co si chceš poznamenat?</label>
+      <div class="format-toolbar">
+        <button class="fmt-btn" title="Tučně" onmousedown="event.preventDefault();applyFmt('noteInput','**','**')"><b>B</b></button>
+        <button class="fmt-btn" title="Kurzíva" onmousedown="event.preventDefault();applyFmt('noteInput','*','*')"><i>I</i></button>
+        <button class="fmt-btn" title="Podtržené" onmousedown="event.preventDefault();applyFmt('noteInput','__','__')"><u>U</u></button>
+        <button class="fmt-btn" title="Přeškrtnuté" onmousedown="event.preventDefault();applyFmt('noteInput','~~','~~')"><s>S</s></button>
+      </div>
       <textarea id="noteInput" placeholder="Napiš svou poznámku..."></textarea>
       <div class="tag-field">
         <label>Tagy</label>
@@ -474,18 +487,26 @@ async function loadNotes() {
       return `<span class="tag-chip" style="background:${s.bg};color:${s.color};cursor:pointer"
                     onclick="addFilterTag('${t}')" title="Filtrovat dle #${t}">#${t}</span>`;
     }).join('');
-    return `<div class="note-item${n.is_pinned ? ' pinned' : ''}" id="note-${n.id}">
+    return `<div class="note-item${n.is_pinned ? ' pinned' : ''}" id="note-${n.id}" data-text="${escAttr(n.text)}">
       <div class="note-header">
         <div class="note-dates">
           <div class="note-meta">🕐 Vytvořeno: ${fmt(n.created_at)}</div>
           ${n.updated_at ? `<div class="note-meta edited">✏️ Editováno: ${fmt(n.updated_at)}</div>` : ''}
         </div>
-        <button class="btn-pin${n.is_pinned ? ' active' : ''}" onclick="togglePin(${n.id})" title="${n.is_pinned ? 'Odepnout' : 'Připnout'}">📌</button>
-        <button class="btn btn-edit" onclick="startEdit(${n.id})">✏️ Upravit</button>
+        <div class="note-actions">
+          <button class="btn-pin${n.is_pinned ? ' active' : ''}" onclick="togglePin(${n.id})" title="${n.is_pinned ? 'Odepnout' : 'Připnout'}">📌</button>
+          <button class="btn btn-edit" onclick="startEdit(${n.id})">✏️ Upravit</button>
+        </div>
       </div>
-      <div class="note-text">${esc(n.text)}</div>
+      <div class="note-text">${renderText(n.text)}</div>
       ${tagHtml ? `<div class="note-tags">${tagHtml}</div>` : ''}
       <div class="note-edit-area">
+        <div class="format-toolbar">
+          <button class="fmt-btn" title="Tučně" onmousedown="event.preventDefault();applyFmt('edit-${n.id}','**','**')"><b>B</b></button>
+          <button class="fmt-btn" title="Kurzíva" onmousedown="event.preventDefault();applyFmt('edit-${n.id}','*','*')"><i>I</i></button>
+          <button class="fmt-btn" title="Podtržené" onmousedown="event.preventDefault();applyFmt('edit-${n.id}','__','__')"><u>U</u></button>
+          <button class="fmt-btn" title="Přeškrtnuté" onmousedown="event.preventDefault();applyFmt('edit-${n.id}','~~','~~')"><s>S</s></button>
+        </div>
         <textarea id="edit-${n.id}">${esc(n.text)}</textarea>
         <div class="tag-field" style="margin-bottom:.5rem">
           <div class="tag-input-wrap" id="editTagWrap${n.id}" onclick="document.getElementById('editTagInput${n.id}').focus()">
@@ -555,7 +576,7 @@ function startEdit(id) {
   const item = document.getElementById(`note-${id}`);
   item.classList.add('editing');
   const ta = document.getElementById(`edit-${id}`);
-  ta.value = item.querySelector('.note-text').textContent;
+  ta.value = item.dataset.text;
   ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
 }
 
@@ -697,6 +718,28 @@ function renderTagChart(data) {
       scales: { x:{beginAtZero:true,ticks:{stepSize:1,callback:v=>Number.isInteger(v)?v:null},grid:{color:'rgba(0,0,0,.05)'}}, y:{grid:{display:false},ticks:{font:{size:12}}} }
     }
   });
+}
+
+// ── Formatting helpers ─────────────────────────────────────────────────────
+function escAttr(t) {
+  return t.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function renderText(raw) {
+  let t = raw.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  t = t.replace(/\*\*([\s\S]*?)\*\*/g, '<strong>$1</strong>');
+  t = t.replace(/\*([\s\S]*?)\*/g,     '<em>$1</em>');
+  t = t.replace(/__([\s\S]*?)__/g,     '<u>$1</u>');
+  t = t.replace(/~~([\s\S]*?)~~/g,     '<s>$1</s>');
+  return t;
+}
+function applyFmt(taId, open, close) {
+  const ta    = document.getElementById(taId);
+  const start = ta.selectionStart, end = ta.selectionEnd;
+  const sel   = ta.value.substring(start, end);
+  ta.value    = ta.value.substring(0, start) + open + sel + close + ta.value.substring(end);
+  ta.selectionStart = start + open.length;
+  ta.selectionEnd   = end   + open.length;
+  ta.focus();
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
