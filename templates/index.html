@@ -133,11 +133,20 @@
     .note-dates{flex:1}
     .note-meta{font-size:.78rem;color:#999;line-height:1.5}
     .note-meta.edited{color:#f59e0b}
-    .note-text{font-size:.97rem;line-height:1.55;white-space:pre-wrap;word-break:break-word}
+    .note-text{font-size:.97rem;line-height:1.55;word-break:break-word}
     .note-tags{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.6rem}
     .note-edit-area{display:none;margin-top:.5rem}
-    .note-edit-area textarea{min-height:70px;font-size:.95rem;margin-bottom:.5rem}
+    .note-edit-area textarea{min-height:70px;font-size:.95rem;margin-bottom:.5rem;width:100%}
     .note-edit-actions{display:flex;gap:.4rem}
+    .note-editor{width:100%;padding:.85rem 1rem;border:2px solid #e0e0e0;border-radius:10px;font-size:1rem;font-family:inherit;min-height:90px;transition:border-color .2s;color:#1a1a2e;outline:none;line-height:1.55;word-break:break-word;cursor:text}
+    .note-editor:focus{border-color:#6c63ff}
+    .note-editor[contenteditable=true]:empty::before{content:attr(data-placeholder);color:#bbb;pointer-events:none;display:block}
+    .note-edit-area .note-editor{min-height:70px;font-size:.95rem;margin-bottom:.5rem}
+    .editor-mode-toggle{margin-left:auto;display:flex}
+    .mode-btn{padding:.15rem .52rem;font-size:.72rem;font-weight:700;border:1.5px solid #e0e0e0;background:#fff;color:#888;cursor:pointer;transition:all .15s;letter-spacing:.02em}
+    .mode-btn:first-child{border-radius:6px 0 0 6px;border-right:none}
+    .mode-btn:last-child{border-radius:0 6px 6px 0}
+    .mode-btn.active{background:#6c63ff;color:#fff;border-color:#6c63ff}
     .note-item.editing .note-text{display:none}
     .note-item.editing .note-tags{display:none}
     .note-item.editing .note-edit-area{display:block}
@@ -222,12 +231,17 @@
     <div class="card">
       <label for="noteInput">Co si chceš poznamenat?</label>
       <div class="format-toolbar">
-        <button class="fmt-btn" title="Tučně" onmousedown="event.preventDefault();applyFmt('noteInput','**','**')"><b>B</b></button>
-        <button class="fmt-btn" title="Kurzíva" onmousedown="event.preventDefault();applyFmt('noteInput','*','*')"><i>I</i></button>
-        <button class="fmt-btn" title="Podtržené" onmousedown="event.preventDefault();applyFmt('noteInput','__','__')"><u>U</u></button>
-        <button class="fmt-btn" title="Přeškrtnuté" onmousedown="event.preventDefault();applyFmt('noteInput','~~','~~')"><s>S</s></button>
+        <button class="fmt-btn" title="Tučně" onmousedown="event.preventDefault();fmtNew('bold','**','**')"><b>B</b></button>
+        <button class="fmt-btn" title="Kurzíva" onmousedown="event.preventDefault();fmtNew('italic','*','*')"><i>I</i></button>
+        <button class="fmt-btn" title="Podtržené" onmousedown="event.preventDefault();fmtNew('underline','__','__')"><u>U</u></button>
+        <button class="fmt-btn" title="Přeškrtnuté" onmousedown="event.preventDefault();fmtNew('strikeThrough','~~','~~')"><s>S</s></button>
+        <div class="editor-mode-toggle">
+          <button class="mode-btn active" data-mode="wysiwyg" onclick="setEditorMode('wysiwyg')">WYSIWYG</button>
+          <button class="mode-btn" data-mode="md" onclick="setEditorMode('md')">MD</button>
+        </div>
       </div>
-      <textarea id="noteInput" placeholder="Napiš svou poznámku..."></textarea>
+      <div id="noteInput" class="note-editor" contenteditable="true" data-placeholder="Napiš svou poznámku..."></div>
+      <textarea id="noteInputMd" style="display:none" placeholder="Napiš svou poznámku..."></textarea>
       <div class="tag-field">
         <label>Tagy</label>
         <div class="tag-input-wrap" id="newTagWrap" onclick="document.getElementById('newTagInput').focus()">
@@ -344,6 +358,7 @@
 <script>
 // ── State ──────────────────────────────────────────────────────────────────
 let editingNoteId   = null;
+let editorMode      = 'wysiwyg';   // 'wysiwyg' | 'md'
 let showArchived    = false;
 let searchQuery     = '';
 let searchDebounce  = null;
@@ -592,12 +607,13 @@ async function loadNotes() {
       ${tagHtml ? `<div class="note-tags">${tagHtml}</div>` : ''}
       <div class="note-edit-area">
         <div class="format-toolbar">
-          <button class="fmt-btn" title="Tučně" onmousedown="event.preventDefault();applyFmt('edit-${n.id}','**','**')"><b>B</b></button>
-          <button class="fmt-btn" title="Kurzíva" onmousedown="event.preventDefault();applyFmt('edit-${n.id}','*','*')"><i>I</i></button>
-          <button class="fmt-btn" title="Podtržené" onmousedown="event.preventDefault();applyFmt('edit-${n.id}','__','__')"><u>U</u></button>
-          <button class="fmt-btn" title="Přeškrtnuté" onmousedown="event.preventDefault();applyFmt('edit-${n.id}','~~','~~')"><s>S</s></button>
+          <button class="fmt-btn" title="Tučně" onmousedown="event.preventDefault();fmtEdit(${n.id},'bold','**','**')"><b>B</b></button>
+          <button class="fmt-btn" title="Kurzíva" onmousedown="event.preventDefault();fmtEdit(${n.id},'italic','*','*')"><i>I</i></button>
+          <button class="fmt-btn" title="Podtržené" onmousedown="event.preventDefault();fmtEdit(${n.id},'underline','__','__')"><u>U</u></button>
+          <button class="fmt-btn" title="Přeškrtnuté" onmousedown="event.preventDefault();fmtEdit(${n.id},'strikeThrough','~~','~~')"><s>S</s></button>
         </div>
-        <textarea id="edit-${n.id}">${esc(n.text)}</textarea>
+        <div id="editWysiwyg-${n.id}" class="note-editor" contenteditable="true" data-placeholder="Uprav poznámku..." style="display:none"></div>
+        <textarea id="edit-${n.id}" style="display:none">${esc(n.text)}</textarea>
         <div class="tag-field" style="margin-bottom:.5rem">
           <div class="tag-input-wrap" id="editTagWrap${n.id}" onclick="document.getElementById('editTagInput${n.id}').focus()">
             <div id="editTagChips${n.id}"></div>
@@ -618,15 +634,28 @@ async function loadNotes() {
   if (hasBoth) html += '<div class="notes-section-sep" style="margin-top:.5rem">Ostatní poznámky</div>';
   html += unpinned.map(noteHtml).join('');
   list.innerHTML = html;
-  // Inicializuj tag komponenty pro editaci
+  // Inicializuj tag komponenty a event handlery pro editaci
   notes.forEach(n => {
     makeTagInputComponent(`editTagWrap${n.id}`,`editTagChips${n.id}`,`editTagInput${n.id}`,`editTagDropdown${n.id}`);
     window[`setTags_editTagInput${n.id}`](n.tags || []);
-    // Enter = uložit, Shift+Enter = nový řádek
+    // Textarea: Enter = uložit
     const editTa = document.getElementById(`edit-${n.id}`);
     if (editTa) {
       editTa.addEventListener('keydown', e => {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit(n.id); }
+      });
+    }
+    // WYSIWYG div: Enter = uložit, Shift+Enter = nový řádek; paste = čistý text
+    const editDiv = document.getElementById(`editWysiwyg-${n.id}`);
+    if (editDiv) {
+      editDiv.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit(n.id); }
+        else if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); document.execCommand('insertLineBreak'); }
+      });
+      editDiv.addEventListener('paste', e => {
+        e.preventDefault();
+        const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+        document.execCommand('insertText', false, text);
       });
     }
   });
@@ -662,11 +691,17 @@ async function togglePin(id) {
 }
 
 async function saveNote() {
-  const input = document.getElementById('noteInput');
-  const btn   = document.getElementById('saveBtn');
-  const text  = input.value.trim();
-  if (!text) { showToast('Poznámka nesmí být prázdná!'); return; }
-  const tags  = window['getTags_newTagInput']();
+  let text;
+  if (editorMode === 'wysiwyg') {
+    const editor = document.getElementById('noteInput');
+    text = editor.innerHTML.trim();
+    if (!text || text === '<br>') { showToast('Poznámka nesmí být prázdná!'); return; }
+  } else {
+    text = document.getElementById('noteInputMd').value.trim();
+    if (!text) { showToast('Poznámka nesmí být prázdná!'); return; }
+  }
+  const btn  = document.getElementById('saveBtn');
+  const tags = window['getTags_newTagInput']();
   btn.disabled = true;
   try {
     const res = await fetch('/api/notes', {
@@ -674,31 +709,47 @@ async function saveNote() {
       body: JSON.stringify({ text, tags })
     });
     if (res.ok) {
-      input.value = '';
+      if (editorMode === 'wysiwyg') document.getElementById('noteInput').innerHTML = '';
+      else document.getElementById('noteInputMd').value = '';
       window['clearTags_newTagInput']();
       await Promise.all([loadNotes(), loadAllTags()]);
       showToast('✓ Poznámka uložena');
     }
-  } finally { btn.disabled = false; input.focus(); }
+  } finally {
+    btn.disabled = false;
+    (editorMode === 'wysiwyg' ? document.getElementById('noteInput') : document.getElementById('noteInputMd')).focus();
+  }
 }
 
 async function startEdit(id) {
   // Pokud je jiná poznámka rozeditovaná, nejdřív ji ulož
   if (editingNoteId !== null && editingNoteId !== id) {
-    const prevTa = document.getElementById(`edit-${editingNoteId}`);
-    if (prevTa && prevTa.value.trim()) {
-      await saveEdit(editingNoteId);   // saveEdit zavolá loadNotes → DOM se obnoví
-    } else {
-      cancelEdit(editingNoteId);
-    }
+    const prevContent = _getEditContent(editingNoteId);
+    const prevEmpty   = !prevContent || prevContent.trim() === '' || prevContent.trim() === '<br>';
+    if (!prevEmpty) await saveEdit(editingNoteId);
+    else cancelEdit(editingNoteId);
   }
   editingNoteId = id;
   const item = document.getElementById(`note-${id}`);
   if (!item) return;
   item.classList.add('editing');
-  const ta = document.getElementById(`edit-${id}`);
-  ta.value = item.dataset.text;
-  ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+  const rawText  = item.dataset.text;
+  const wysiwyg  = document.getElementById(`editWysiwyg-${id}`);
+  const ta       = document.getElementById(`edit-${id}`);
+  if (editorMode === 'wysiwyg') {
+    ta.style.display      = 'none';
+    wysiwyg.style.display = 'block';
+    wysiwyg.innerHTML = isHtmlContent(rawText) ? rawText : mdToHtml(rawText);
+    wysiwyg.focus();
+    const range = document.createRange();
+    range.selectNodeContents(wysiwyg); range.collapse(false);
+    const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+  } else {
+    wysiwyg.style.display = 'none';
+    ta.style.display      = 'block';
+    ta.value = rawText;
+    ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+  }
 }
 
 function cancelEdit(id) {
@@ -707,9 +758,8 @@ function cancelEdit(id) {
 }
 
 async function saveEdit(id) {
-  const ta   = document.getElementById(`edit-${id}`);
-  const text = ta.value.trim();
-  if (!text) { showToast('Text nesmí být prázdný!'); return; }
+  const text = _getEditContent(id).trim();
+  if (!text || text === '<br>') { showToast('Text nesmí být prázdný!'); return; }
   const tags = window[`getTags_editTagInput${id}`]();
   const res  = await fetch(`/api/notes/${id}`, {
     method: 'PUT', headers: {'Content-Type':'application/json'},
@@ -722,7 +772,18 @@ async function saveEdit(id) {
   } else showToast('Chyba při ukládání!');
 }
 
+// WYSIWYG new note: Enter = uložit, Shift+Enter = nový řádek; paste = čistý text
 document.getElementById('noteInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveNote(); }
+  else if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); document.execCommand('insertLineBreak'); }
+});
+document.getElementById('noteInput').addEventListener('paste', e => {
+  e.preventDefault();
+  const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+  document.execCommand('insertText', false, text);
+});
+// MD new note textarea
+document.getElementById('noteInputMd').addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveNote(); }
 });
 
@@ -849,14 +910,54 @@ function renderTagChart(data) {
 function escAttr(t) {
   return t.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
+
+function isHtmlContent(text) {
+  return /<(strong|em|b|i|u|s|del|br)\b/i.test(text);
+}
+
+function mdToHtml(md) {
+  if (!md) return '';
+  let h = md.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  h = h.replace(/\*\*([\s\S]*?)\*\*/g, '<strong>$1</strong>');
+  h = h.replace(/\*([\s\S]*?)\*/g,     '<em>$1</em>');
+  h = h.replace(/__([\s\S]*?)__/g,     '<u>$1</u>');
+  h = h.replace(/~~([\s\S]*?)~~/g,     '<s>$1</s>');
+  return h.replace(/\n/g, '<br>');
+}
+
+function htmlToMd(html) {
+  if (!html) return '';
+  let md = html;
+  md = md.replace(/<br\s*\/?>/gi, '\n');
+  md = md.replace(/<\/p>/gi, '\n').replace(/<p[^>]*>/gi, '');
+  md = md.replace(/<\/div>/gi, '\n').replace(/<div[^>]*>/gi, '');
+  md = md.replace(/<strong>([\s\S]*?)<\/strong>/gi, '**$1**');
+  md = md.replace(/<b>([\s\S]*?)<\/b>/gi,           '**$1**');
+  md = md.replace(/<em>([\s\S]*?)<\/em>/gi,         '*$1*');
+  md = md.replace(/<i>([\s\S]*?)<\/i>/gi,           '*$1*');
+  md = md.replace(/<u>([\s\S]*?)<\/u>/gi,           '__$1__');
+  md = md.replace(/<s>([\s\S]*?)<\/s>/gi,           '~~$1~~');
+  md = md.replace(/<del>([\s\S]*?)<\/del>/gi,       '~~$1~~');
+  md = md.replace(/<[^>]+>/g, '');
+  md = md.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&nbsp;/g,' ').replace(/&quot;/g,'"');
+  return md.replace(/\n{3,}/g,'\n\n').trim();
+}
+
 function renderText(raw) {
+  if (!raw) return '';
+  if (isHtmlContent(raw)) {
+    // Sanitize: povol jen bezpečné inline tagy
+    return raw.replace(/<(?!\/?(?:strong|em|b|i|u|s|del|br)\b)[^>]*>/gi, '');
+  }
+  // Legacy markdown
   let t = raw.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   t = t.replace(/\*\*([\s\S]*?)\*\*/g, '<strong>$1</strong>');
   t = t.replace(/\*([\s\S]*?)\*/g,     '<em>$1</em>');
   t = t.replace(/__([\s\S]*?)__/g,     '<u>$1</u>');
   t = t.replace(/~~([\s\S]*?)~~/g,     '<s>$1</s>');
-  return t;
+  return t.replace(/\n/g,'<br>');
 }
+
 function applyFmt(taId, open, close) {
   const ta    = document.getElementById(taId);
   const start = ta.selectionStart, end = ta.selectionEnd;
@@ -865,6 +966,69 @@ function applyFmt(taId, open, close) {
   ta.selectionStart = start + open.length;
   ta.selectionEnd   = end   + open.length;
   ta.focus();
+}
+
+function fmtNew(cmd, open, close) {
+  if (editorMode === 'wysiwyg') {
+    document.getElementById('noteInput').focus();
+    document.execCommand(cmd, false, null);
+  } else {
+    applyFmt('noteInputMd', open, close);
+  }
+}
+
+function fmtEdit(id, cmd, open, close) {
+  if (editorMode === 'wysiwyg') {
+    document.getElementById(`editWysiwyg-${id}`).focus();
+    document.execCommand(cmd, false, null);
+  } else {
+    applyFmt(`edit-${id}`, open, close);
+  }
+}
+
+function setEditorMode(mode) {
+  if (editorMode === mode) return;
+  // Převeď obsah nového editoru
+  const newDiv = document.getElementById('noteInput');
+  const newTa  = document.getElementById('noteInputMd');
+  if (mode === 'md') {
+    newTa.value         = htmlToMd(newDiv.innerHTML);
+    newDiv.style.display = 'none';
+    newTa.style.display  = 'block';
+  } else {
+    newDiv.innerHTML    = mdToHtml(newTa.value);
+    newTa.style.display  = 'none';
+    newDiv.style.display = 'block';
+  }
+  // Převeď případně otevřený editační editor
+  if (editingNoteId !== null) {
+    const editDiv = document.getElementById(`editWysiwyg-${editingNoteId}`);
+    const editTa  = document.getElementById(`edit-${editingNoteId}`);
+    if (editDiv && editTa) {
+      if (mode === 'md') {
+        editTa.value         = htmlToMd(editDiv.innerHTML);
+        editDiv.style.display = 'none';
+        editTa.style.display  = 'block';
+      } else {
+        editDiv.innerHTML    = isHtmlContent(editTa.value) ? editTa.value : mdToHtml(editTa.value);
+        editTa.style.display  = 'none';
+        editDiv.style.display = 'block';
+      }
+    }
+  }
+  editorMode = mode;
+  document.querySelectorAll('.mode-btn[data-mode]').forEach(b =>
+    b.classList.toggle('active', b.dataset.mode === mode));
+}
+
+function _getEditContent(id) {
+  if (editorMode === 'wysiwyg') {
+    const el = document.getElementById(`editWysiwyg-${id}`);
+    return el ? el.innerHTML : '';
+  } else {
+    const el = document.getElementById(`edit-${id}`);
+    return el ? el.value : '';
+  }
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
