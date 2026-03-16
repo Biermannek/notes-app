@@ -120,8 +120,8 @@
     .btn-pin.active{filter:none}
     .notes-section-sep{display:flex;align-items:center;gap:.6rem;margin:.25rem 0 .6rem;font-size:.78rem;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.05em}
     .notes-section-sep::after{content:'';flex:1;height:1px;background:#e5e7eb}
-    .btn-archive{background:transparent;font-size:1rem;padding:.2rem .4rem;border:none;border-radius:6px;cursor:pointer;line-height:1;flex-shrink:0;opacity:.25;transition:opacity .15s,background .15s}
-    .btn-archive:hover{opacity:1;background:#fee2e2}
+    .btn-archive{background:transparent;font-size:1rem;padding:.2rem .4rem;border:none;border-radius:6px;cursor:pointer;line-height:1;flex-shrink:0;opacity:.55;filter:grayscale(.3);transition:opacity .15s,background .15s,filter .15s}
+    .btn-archive:hover{opacity:1;filter:none;background:#fee2e2}
     .btn-restore{font-size:.8rem;padding:.28rem .65rem;border:1.5px solid #10b981;border-radius:8px;background:transparent;color:#10b981;font-weight:600;cursor:pointer;line-height:1;flex-shrink:0;transition:background .15s}
     .btn-restore:hover{background:#d1fae5}
     .note-item.archived{border-left-color:#94a3b8;background:#f8fafc}
@@ -577,7 +577,7 @@ async function loadNotes() {
          <button class="btn-restore" onclick="restoreNote(${n.id})" title="Obnovit poznámku">↩️ Obnovit</button>`
       : `<button class="btn-pin${n.is_pinned ? ' active' : ''}" onclick="togglePin(${n.id})" title="${n.is_pinned ? 'Odepnout' : 'Připnout'}">📌</button>
          <button class="btn btn-edit" onclick="startEdit(${n.id})">✏️ Upravit</button>
-         <button class="btn-archive" onclick="archiveNote(${n.id})" title="Archivovat">🗑️</button>`;
+         <button class="btn-archive" onclick="archiveNote(${n.id})" title="Archivovat">🗑</button>`;
     return `<div class="note-item${n.is_pinned && !showArchived ? ' pinned' : ''}${showArchived ? ' archived' : ''}" id="note-${n.id}" data-text="${escAttr(n.text)}">
       <div class="note-header">
         <div class="note-dates">
@@ -637,7 +637,7 @@ function toggleArchiveView() {
   document.getElementById('notesViewTitle').textContent =
     showArchived ? 'Archivované poznámky' : 'Uložené poznámky';
   const btn = document.getElementById('btnArchiveToggle');
-  btn.textContent = showArchived ? '← Zpět' : '📦 Archiv';
+  btn.textContent = showArchived ? '✕ Zavřít archiv' : '📦 Archiv';
   btn.classList.toggle('active', showArchived);
   loadNotes();
 }
