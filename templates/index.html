@@ -96,9 +96,9 @@
     .note-item{background:#fff;border-radius:12px;padding:1rem 1.2rem;margin-bottom:.75rem;box-shadow:0 1px 6px rgba(0,0,0,.07);border-left:4px solid #6c63ff;animation:fadeIn .3s ease}
     .note-item.editing{border-left-color:#f59e0b}
     .note-item.pinned{border-left-color:#f59e0b;background:#fffdf5}
-    .btn-pin{background:transparent;color:#ccc;font-size:1rem;padding:.2rem .4rem;border:none;border-radius:6px;cursor:pointer;transition:background .15s,color .15s;line-height:1;flex-shrink:0}
-    .btn-pin:hover{background:#fef3c7;color:#d97706}
-    .btn-pin.active{color:#d97706}
+    .btn-pin{background:transparent;font-size:1rem;padding:.2rem .4rem;border:none;border-radius:6px;cursor:pointer;line-height:1;flex-shrink:0;filter:grayscale(1) opacity(.3);transition:filter .15s,background .15s}
+    .btn-pin:hover{background:#fef3c7;filter:grayscale(0) opacity(.7)}
+    .btn-pin.active{filter:none}
     .notes-section-sep{display:flex;align-items:center;gap:.6rem;margin:.25rem 0 .6rem;font-size:.78rem;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.05em}
     .notes-section-sep::after{content:'';flex:1;height:1px;background:#e5e7eb}
     @keyframes fadeIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
