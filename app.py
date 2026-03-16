@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from version import __version__
 import sqlite3
 import os
+import re
 
 app = Flask(__name__)
 DB_PATH = os.environ.get('DB_PATH', '/data/notes.db')
@@ -82,6 +83,21 @@ def note_select():
     return 'SELECT n.id, n.text, n.created_at, n.updated_at, n.is_pinned FROM notes n'
 
 
+def parse_search(query):
+    """Parsuje hledaný výraz: "přesná fráze" nebo jednotlivá slova (OR)."""
+    terms = []
+    for phrase in re.findall(r'"([^"]+)"', query):
+        phrase = phrase.strip().lower()
+        if phrase:
+            terms.append(phrase)
+    remaining = re.sub(r'"[^"]*"', '', query).strip()
+    for word in remaining.split():
+        word = word.strip().lower()
+        if word:
+            terms.append(word)
+    return terms
+
+
 # ── routes ────────────────────────────────────────────────────────────────────
 
 @app.route('/')
@@ -148,10 +164,11 @@ def get_tags():
 
 @app.route('/api/notes', methods=['GET'])
 def get_notes():
-    sort_by  = request.args.get('sort_by', 'created_at')
-    order    = request.args.get('order', 'desc')
-    tags_raw = request.args.get('tags', '')
-    tag_mode = request.args.get('tag_mode', 'or')
+    sort_by    = request.args.get('sort_by', 'created_at')
+    order      = request.args.get('order', 'desc')
+    tags_raw   = request.args.get('tags', '')
+    tag_mode   = request.args.get('tag_mode', 'or')
+    search_raw = request.args.get('search', '').strip()
 
     if sort_by not in ('created_at', 'updated_at'): sort_by = 'created_at'
     if order    not in ('asc', 'desc'):              order   = 'desc'
@@ -162,8 +179,17 @@ def get_notes():
                  if sort_by == 'updated_at' else f'n.created_at {order}')
     order_clause = f'n.is_pinned DESC, {secondary}'
 
-    tag_list = [t.strip().lower() for t in tags_raw.split(',') if t.strip()]
-    sel = note_select()
+    tag_list     = [t.strip().lower() for t in tags_raw.split(',') if t.strip()]
+    search_terms = parse_search(search_raw) if search_raw else []
+    sel          = note_select()
+
+    # Podmínka pro full-text hledání (OR mezi všemi výrazy)
+    search_cond   = ''
+    search_params = []
+    if search_terms:
+        conds         = ['LOWER(n.text) LIKE ?' for _ in search_terms]
+        search_cond   = ' AND (' + ' OR '.join(conds) + ')'
+        search_params = [f'%{t}%' for t in search_terms]
 
     conn = get_db()
     if tag_list:
@@ -171,16 +197,24 @@ def get_notes():
         if tag_mode == 'and':
             query = (f'{sel} JOIN note_tags nt ON n.id = nt.note_id '
                      f'JOIN tags t ON nt.tag_id = t.id '
-                     f'WHERE t.name IN ({ph}) '
+                     f'WHERE t.name IN ({ph}){search_cond} '
                      f'GROUP BY n.id HAVING COUNT(DISTINCT t.name) = {len(tag_list)} '
                      f'ORDER BY {order_clause}')
+            params = tag_list + search_params
         else:
             query = (f'{sel} JOIN note_tags nt ON n.id = nt.note_id '
                      f'JOIN tags t ON nt.tag_id = t.id '
-                     f'WHERE t.name IN ({ph}) ORDER BY {order_clause}')
-        rows = conn.execute(query, tag_list).fetchall()
+                     f'WHERE t.name IN ({ph}){search_cond} '
+                     f'GROUP BY n.id ORDER BY {order_clause}')
+            params = tag_list + search_params
+        rows = conn.execute(query, params).fetchall()
     else:
-        rows = conn.execute(f'{sel} ORDER BY {order_clause}').fetchall()
+        if search_cond:
+            rows = conn.execute(
+                f'{sel} WHERE 1=1{search_cond} ORDER BY {order_clause}', search_params
+            ).fetchall()
+        else:
+            rows = conn.execute(f'{sel} ORDER BY {order_clause}').fetchall()
 
     note_ids = [r['id'] for r in rows]
     tags_map = get_tags_for_notes(conn, note_ids)

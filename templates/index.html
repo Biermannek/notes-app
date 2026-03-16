@@ -81,6 +81,17 @@
     .btn-order:hover{background:#f0f2f5;border-color:#6c63ff}
     .btn-order.active{background:#6c63ff;color:#fff;border-color:#6c63ff}
 
+    /* ── Search bar ── */
+    .search-bar{background:#fff;border-radius:12px;padding:.65rem 1rem;margin-bottom:.75rem;box-shadow:0 1px 6px rgba(0,0,0,.06)}
+    .search-wrap{display:flex;align-items:center;gap:.6rem}
+    .search-icon{font-size:1rem;color:#aaa;flex-shrink:0;line-height:1}
+    .search-input{flex:1;border:none;outline:none;font-size:.95rem;font-family:inherit;color:#1a1a2e;background:transparent;min-width:0}
+    .search-input::placeholder{color:#bbb}
+    .search-clear{border:none;background:transparent;color:#bbb;cursor:pointer;font-size:.9rem;padding:.1rem .35rem;border-radius:4px;flex-shrink:0;line-height:1}
+    .search-clear:hover{color:#f87171}
+    .search-hint{font-size:.75rem;color:#bbb;margin-left:.25rem;white-space:nowrap;flex-shrink:0}
+    .search-active .search-icon{color:#6c63ff}
+
     /* ── Tag filter bar ── */
     .filter-bar{background:#fff;border-radius:12px;padding:.85rem 1rem;margin-bottom:1rem;box-shadow:0 1px 6px rgba(0,0,0,.06)}
     .filter-bar-top{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
@@ -220,6 +231,16 @@
       <button class="btn btn-primary" id="saveBtn" onclick="saveNote()">＋ Uložit poznámku</button>
     </div>
 
+    <!-- Search bar -->
+    <div class="search-bar" id="searchBarEl">
+      <div class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input class="search-input" id="searchInput" placeholder='Hledat... nebo "přesná fráze"' autocomplete="off"/>
+        <span class="search-hint" id="searchHint"></span>
+        <button class="search-clear" id="searchClearBtn" style="display:none" onclick="clearSearch()">✕</button>
+      </div>
+    </div>
+
     <!-- Tag filter -->
     <div class="filter-bar" id="filterBar" style="display:none">
       <div class="filter-bar-top">
@@ -314,6 +335,8 @@
 <script>
 // ── State ──────────────────────────────────────────────────────────────────
 let editingNoteId   = null;
+let searchQuery     = '';
+let searchDebounce  = null;
 let currentOrder    = 'desc';
 let currentStatType = 'created';
 let currentPeriod   = 7;
@@ -431,6 +454,36 @@ function makeTagInputComponent(wrapId, chipsId, inputId, dropdownId) {
   });
 }
 
+// ── Search ─────────────────────────────────────────────────────────────────
+function parseSearchTerms(q) {
+  // Vrátí pole výrazů: "fráze v uvozovkách" i jednotlivá slova
+  const terms = [];
+  const phrases = q.match(/"([^"]+)"/g) || [];
+  phrases.forEach(p => terms.push({ type: 'phrase', val: p.replace(/"/g, '').trim() }));
+  const rest = q.replace(/"[^"]*"/g, '').trim();
+  rest.split(/\s+/).filter(Boolean).forEach(w => terms.push({ type: 'word', val: w }));
+  return terms;
+}
+
+function updateSearchHint(q) {
+  const hint  = document.getElementById('searchHint');
+  const clear = document.getElementById('searchClearBtn');
+  const bar   = document.getElementById('searchBarEl');
+  if (!q.trim()) { hint.textContent = ''; clear.style.display = 'none'; bar.classList.remove('search-active'); return; }
+  clear.style.display = 'inline';
+  bar.classList.add('search-active');
+  const terms = parseSearchTerms(q);
+  const parts = terms.map(t => t.type === 'phrase' ? `"${t.val}"` : t.val);
+  hint.textContent = parts.length ? `→ ${parts.join(' nebo ')}` : '';
+}
+
+function clearSearch() {
+  document.getElementById('searchInput').value = '';
+  searchQuery = '';
+  updateSearchHint('');
+  loadNotes();
+}
+
 // ── Notes page ────────────────────────────────────────────────────────────
 function setOrder(order) {
   currentOrder = order;
@@ -480,6 +533,7 @@ function renderFilterBar() {
 async function loadNotes() {
   let url = `/api/notes?sort_by=${document.getElementById('sortBy').value}&order=${currentOrder}`;
   if (activeFiltTags.length) url += `&tags=${activeFiltTags.join(',')}&tag_mode=${tagMode}`;
+  if (searchQuery.trim()) url += `&search=${encodeURIComponent(searchQuery.trim())}`;
   const res   = await fetch(url);
   const notes = await res.json();
   document.getElementById('countBadge').textContent = notes.length;
@@ -780,6 +834,16 @@ function showToast(msg) {
 // ── Init ───────────────────────────────────────────────────────────────────
 makeTagInputComponent('newTagWrap','newTagChips','newTagInput','newTagDropdown');
 loadNotes();
+
+document.getElementById('searchInput').addEventListener('input', e => {
+  clearTimeout(searchDebounce);
+  searchQuery = e.target.value;
+  updateSearchHint(searchQuery);
+  searchDebounce = setTimeout(() => loadNotes(), 300);
+});
+document.getElementById('searchInput').addEventListener('keydown', e => {
+  if (e.key === 'Escape') clearSearch();
+});
 
 // ── Service Worker registrace ───────────────────────────────────────────────
 if ('serviceWorker' in navigator) {
