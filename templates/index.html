@@ -246,13 +246,13 @@
       <div class="filter-bar-top">
         <span class="filter-label">Filtr tagů:</span>
         <div class="filter-tags" id="filterTagChips"></div>
-        <div class="filter-mode">
+        <div class="filter-mode" id="filterMode" style="display:none">
           <div class="toggle-group">
             <button class="toggle-btn active" id="modeOR"  onclick="setTagMode('or')">OR</button>
             <button class="toggle-btn"        id="modeAND" onclick="setTagMode('and')">AND</button>
           </div>
         </div>
-        <button class="filter-clear" onclick="clearTagFilter()">✕ Zrušit filtr</button>
+        <button class="filter-clear" id="filterClear" style="display:none" onclick="clearTagFilter()">✕ Zrušit filtr</button>
       </div>
     </div>
 
@@ -378,6 +378,7 @@ function showStatsPanel(panel) {
 async function loadAllTags() {
   const res = await fetch('/api/tags');
   allTags = await res.json();
+  renderFilterBar();
   return allTags;
 }
 
@@ -507,12 +508,6 @@ function addFilterTag(name) {
   }
 }
 
-function removeFilterTag(name) {
-  activeFiltTags = activeFiltTags.filter(t => t !== name);
-  renderFilterBar();
-  loadNotes();
-}
-
 function clearTagFilter() {
   activeFiltTags = [];
   renderFilterBar();
@@ -521,13 +516,26 @@ function clearTagFilter() {
 
 function renderFilterBar() {
   const bar = document.getElementById('filterBar');
-  if (!activeFiltTags.length) { bar.style.display = 'none'; return; }
+  if (!allTags.length) { bar.style.display = 'none'; return; }
   bar.style.display = 'block';
-  document.getElementById('filterTagChips').innerHTML = activeFiltTags.map(t => {
-    const s = tagStyle(t);
-    return `<span class="filter-tag selected" style="background:${s.bg};color:${s.color}">
-              #${t}<span class="rm" onclick="removeFilterTag('${t}')">×</span></span>`;
+  document.getElementById('filterTagChips').innerHTML = allTags.map(t => {
+    const s = tagStyle(t.name);
+    const active = activeFiltTags.includes(t.name);
+    return `<span class="filter-tag ${active ? 'selected' : ''}"
+                  style="background:${s.bg};color:${s.color}"
+                  onclick="toggleFilterTag('${t.name}')"
+                  title="${active ? 'Odebrat z filtru' : 'Přidat do filtru'}">#${t.name}</span>`;
   }).join('');
+  const hasActive = activeFiltTags.length > 0;
+  document.getElementById('filterMode').style.display  = hasActive ? 'flex' : 'none';
+  document.getElementById('filterClear').style.display = hasActive ? 'inline' : 'none';
+}
+
+function toggleFilterTag(name) {
+  if (activeFiltTags.includes(name)) activeFiltTags = activeFiltTags.filter(t => t !== name);
+  else activeFiltTags.push(name);
+  renderFilterBar();
+  loadNotes();
 }
 
 async function loadNotes() {
@@ -833,6 +841,7 @@ function showToast(msg) {
 
 // ── Init ───────────────────────────────────────────────────────────────────
 makeTagInputComponent('newTagWrap','newTagChips','newTagInput','newTagDropdown');
+loadAllTags();
 loadNotes();
 
 document.getElementById('searchInput').addEventListener('input', e => {
