@@ -89,6 +89,42 @@ def index():
     return render_template('index.html', version=__version__)
 
 
+@app.route('/manifest.json')
+def manifest():
+    return jsonify({
+        "name": "Poznámky",
+        "short_name": "Poznámky",
+        "description": "Zápisky vždy po ruce",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#f0f2f5",
+        "theme_color": "#1a1a2e",
+        "icons": [
+            {"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+            {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}
+        ]
+    })
+
+
+@app.route('/service-worker.js')
+def service_worker():
+    sw = """
+const CACHE = 'notes-v1';
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', () => self.clients.claim());
+self.addEventListener('fetch', e => {
+  if (e.request.mode === 'navigate') {
+    e.respondWith(fetch(e.request).catch(() =>
+      new Response('<h2 style="font-family:sans-serif;padding:2rem">Jsi offline 📵</h2>',
+        {headers:{'Content-Type':'text/html'}})
+    ));
+  }
+});
+"""
+    from flask import Response
+    return Response(sw, mimetype='application/javascript')
+
+
 @app.route('/api/tags', methods=['GET'])
 def get_tags():
     q = request.args.get('q', '').strip().lower()

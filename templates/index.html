@@ -4,6 +4,12 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Poznámky</title>
+  <link rel="manifest" href="/manifest.json"/>
+  <meta name="theme-color" content="#1a1a2e"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="Poznámky"/>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -307,6 +313,7 @@
 
 <script>
 // ── State ──────────────────────────────────────────────────────────────────
+let editingNoteId   = null;
 let currentOrder    = 'desc';
 let currentStatType = 'created';
 let currentPeriod   = 7;
@@ -572,8 +579,19 @@ async function saveNote() {
   } finally { btn.disabled = false; input.focus(); }
 }
 
-function startEdit(id) {
+async function startEdit(id) {
+  // Pokud je jiná poznámka rozeditovaná, nejdřív ji ulož
+  if (editingNoteId !== null && editingNoteId !== id) {
+    const prevTa = document.getElementById(`edit-${editingNoteId}`);
+    if (prevTa && prevTa.value.trim()) {
+      await saveEdit(editingNoteId);   // saveEdit zavolá loadNotes → DOM se obnoví
+    } else {
+      cancelEdit(editingNoteId);
+    }
+  }
+  editingNoteId = id;
   const item = document.getElementById(`note-${id}`);
+  if (!item) return;
   item.classList.add('editing');
   const ta = document.getElementById(`edit-${id}`);
   ta.value = item.dataset.text;
@@ -582,6 +600,7 @@ function startEdit(id) {
 
 function cancelEdit(id) {
   document.getElementById(`note-${id}`).classList.remove('editing');
+  if (editingNoteId === id) editingNoteId = null;
 }
 
 async function saveEdit(id) {
@@ -593,8 +612,11 @@ async function saveEdit(id) {
     method: 'PUT', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({ text, tags })
   });
-  if (res.ok) { await Promise.all([loadNotes(), loadAllTags()]); showToast('✓ Poznámka upravena'); }
-  else showToast('Chyba při ukládání!');
+  if (res.ok) {
+    if (editingNoteId === id) editingNoteId = null;
+    await Promise.all([loadNotes(), loadAllTags()]);
+    showToast('✓ Poznámka upravena');
+  } else showToast('Chyba při ukládání!');
 }
 
 document.getElementById('noteInput').addEventListener('keydown', e => {
@@ -758,6 +780,11 @@ function showToast(msg) {
 // ── Init ───────────────────────────────────────────────────────────────────
 makeTagInputComponent('newTagWrap','newTagChips','newTagInput','newTagDropdown');
 loadNotes();
+
+// ── Service Worker registrace ───────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/service-worker.js').catch(() => {});
+}
 </script>
 </body>
 </html>
