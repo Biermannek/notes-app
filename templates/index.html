@@ -19,6 +19,7 @@
     .nav-item:hover{color:#fff;background:rgba(255,255,255,.05)}
     .nav-item.active{color:#fff;border-left-color:#6c63ff;background:rgba(108,99,255,.15)}
     .nav-icon{font-size:1.1rem;width:1.3rem;text-align:center}
+    .sidebar-footer{padding:.75rem 1.25rem;font-size:.72rem;color:rgba(255,255,255,.3);border-top:1px solid rgba(255,255,255,.08);margin-top:auto}
 
     /* ── Main ── */
     .main{flex:1;padding:2rem;overflow-y:auto;min-width:0}
@@ -171,6 +172,7 @@
     <div class="nav-item active" onclick="showPage('notes')" id="nav-notes"><span class="nav-icon">📋</span> Poznámky</div>
     <div class="nav-item" onclick="showPage('stats')" id="nav-stats"><span class="nav-icon">📊</span> Statistiky</div>
   </div>
+  <div class="sidebar-footer">Verze: {{ version }}</div>
 </nav>
 
 <main class="main">

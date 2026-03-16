@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify, render_template
 from datetime import datetime, timedelta
+from version import __version__
 import sqlite3
 import os
 
@@ -78,7 +79,7 @@ def get_tags_for_notes(conn, note_ids):
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('index.html', version=__version__)
 
 
 @app.route('/api/tags', methods=['GET'])
