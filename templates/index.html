@@ -493,6 +493,13 @@ async function loadNotes() {
   notes.forEach(n => {
     makeTagInputComponent(`editTagWrap${n.id}`,`editTagChips${n.id}`,`editTagInput${n.id}`,`editTagDropdown${n.id}`);
     window[`setTags_editTagInput${n.id}`](n.tags || []);
+    // Enter = uložit, Shift+Enter = nový řádek
+    const editTa = document.getElementById(`edit-${n.id}`);
+    if (editTa) {
+      editTa.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit(n.id); }
+      });
+    }
   });
 }
 
