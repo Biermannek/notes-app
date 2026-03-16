@@ -120,6 +120,14 @@
     .btn-pin.active{filter:none}
     .notes-section-sep{display:flex;align-items:center;gap:.6rem;margin:.25rem 0 .6rem;font-size:.78rem;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.05em}
     .notes-section-sep::after{content:'';flex:1;height:1px;background:#e5e7eb}
+    .btn-archive{background:transparent;font-size:1rem;padding:.2rem .4rem;border:none;border-radius:6px;cursor:pointer;line-height:1;flex-shrink:0;opacity:.25;transition:opacity .15s,background .15s}
+    .btn-archive:hover{opacity:1;background:#fee2e2}
+    .btn-restore{font-size:.8rem;padding:.28rem .65rem;border:1.5px solid #10b981;border-radius:8px;background:transparent;color:#10b981;font-weight:600;cursor:pointer;line-height:1;flex-shrink:0;transition:background .15s}
+    .btn-restore:hover{background:#d1fae5}
+    .note-item.archived{border-left-color:#94a3b8;background:#f8fafc}
+    .btn-archive-toggle{padding:.25rem .75rem;font-size:.78rem;font-weight:600;border:1.5px solid #e0e0e0;border-radius:8px;background:#fff;color:#777;cursor:pointer;transition:all .15s;white-space:nowrap}
+    .btn-archive-toggle:hover{border-color:#6c63ff;color:#6c63ff}
+    .btn-archive-toggle.active{background:#f0f2f5;border-color:#94a3b8;color:#555}
     @keyframes fadeIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
     .note-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.45rem;gap:.5rem}
     .note-dates{flex:1}
@@ -258,8 +266,9 @@
 
     <div class="toolbar">
       <div class="toolbar-left">
-        <h2>Uložené poznámky</h2>
+        <h2 id="notesViewTitle">Uložené poznámky</h2>
         <span class="badge" id="countBadge">0</span>
+        <button class="btn-archive-toggle" id="btnArchiveToggle" onclick="toggleArchiveView()">📦 Archiv</button>
       </div>
       <div class="sort-controls">
         <select class="sort-select" id="sortBy" onchange="loadNotes()">
@@ -335,6 +344,7 @@
 <script>
 // ── State ──────────────────────────────────────────────────────────────────
 let editingNoteId   = null;
+let showArchived    = false;
 let searchQuery     = '';
 let searchDebounce  = null;
 let currentOrder    = 'desc';
@@ -542,13 +552,19 @@ async function loadNotes() {
   let url = `/api/notes?sort_by=${document.getElementById('sortBy').value}&order=${currentOrder}`;
   if (activeFiltTags.length) url += `&tags=${activeFiltTags.join(',')}&tag_mode=${tagMode}`;
   if (searchQuery.trim()) url += `&search=${encodeURIComponent(searchQuery.trim())}`;
+  if (showArchived) url += '&archived=1';
   const res   = await fetch(url);
   const notes = await res.json();
   document.getElementById('countBadge').textContent = notes.length;
   const list = document.getElementById('notesList');
-  if (!notes.length) { list.innerHTML = '<p class="empty">Žádné poznámky. Přidej první! 👆</p>'; return; }
-  const pinned   = notes.filter(n => n.is_pinned);
-  const unpinned = notes.filter(n => !n.is_pinned);
+  if (!notes.length) {
+    list.innerHTML = showArchived
+      ? '<p class="empty">Archiv je prázdný 📭</p>'
+      : '<p class="empty">Žádné poznámky. Přidej první! 👆</p>';
+    return;
+  }
+  const pinned   = notes.filter(n => n.is_pinned && !showArchived);
+  const unpinned = showArchived ? notes : notes.filter(n => !n.is_pinned);
   const hasBoth  = pinned.length > 0 && unpinned.length > 0;
   function noteHtml(n) {
     const tagHtml = (n.tags || []).map(t => {
@@ -556,15 +572,20 @@ async function loadNotes() {
       return `<span class="tag-chip" style="background:${s.bg};color:${s.color};cursor:pointer"
                     onclick="addFilterTag('${t}')" title="Filtrovat dle #${t}">#${t}</span>`;
     }).join('');
-    return `<div class="note-item${n.is_pinned ? ' pinned' : ''}" id="note-${n.id}" data-text="${escAttr(n.text)}">
+    const actions = showArchived
+      ? `<button class="btn btn-edit" onclick="startEdit(${n.id})">✏️ Upravit</button>
+         <button class="btn-restore" onclick="restoreNote(${n.id})" title="Obnovit poznámku">↩️ Obnovit</button>`
+      : `<button class="btn-pin${n.is_pinned ? ' active' : ''}" onclick="togglePin(${n.id})" title="${n.is_pinned ? 'Odepnout' : 'Připnout'}">📌</button>
+         <button class="btn btn-edit" onclick="startEdit(${n.id})">✏️ Upravit</button>
+         <button class="btn-archive" onclick="archiveNote(${n.id})" title="Archivovat">🗑️</button>`;
+    return `<div class="note-item${n.is_pinned && !showArchived ? ' pinned' : ''}${showArchived ? ' archived' : ''}" id="note-${n.id}" data-text="${escAttr(n.text)}">
       <div class="note-header">
         <div class="note-dates">
           <div class="note-meta">🕐 Vytvořeno: ${fmt(n.created_at)}</div>
           ${n.updated_at ? `<div class="note-meta edited">✏️ Editováno: ${fmt(n.updated_at)}</div>` : ''}
         </div>
         <div class="note-actions">
-          <button class="btn-pin${n.is_pinned ? ' active' : ''}" onclick="togglePin(${n.id})" title="${n.is_pinned ? 'Odepnout' : 'Připnout'}">📌</button>
-          <button class="btn btn-edit" onclick="startEdit(${n.id})">✏️ Upravit</button>
+          ${actions}
         </div>
       </div>
       <div class="note-text">${renderText(n.text)}</div>
@@ -609,6 +630,26 @@ async function loadNotes() {
       });
     }
   });
+}
+
+function toggleArchiveView() {
+  showArchived = !showArchived;
+  document.getElementById('notesViewTitle').textContent =
+    showArchived ? 'Archivované poznámky' : 'Uložené poznámky';
+  const btn = document.getElementById('btnArchiveToggle');
+  btn.textContent = showArchived ? '← Zpět' : '📦 Archiv';
+  btn.classList.toggle('active', showArchived);
+  loadNotes();
+}
+
+async function archiveNote(id) {
+  const res = await fetch(`/api/notes/${id}/archive`, { method: 'PUT' });
+  if (res.ok) { await loadNotes(); showToast('📦 Poznámka archivována'); }
+}
+
+async function restoreNote(id) {
+  const res = await fetch(`/api/notes/${id}/archive`, { method: 'PUT' });
+  if (res.ok) { await loadNotes(); showToast('↩️ Poznámka obnovena'); }
 }
 
 async function togglePin(id) {

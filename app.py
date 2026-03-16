@@ -24,7 +24,8 @@ def init_db():
         text TEXT NOT NULL,
         created_at DATETIME DEFAULT (datetime('now', 'localtime')),
         updated_at DATETIME,
-        is_pinned INTEGER NOT NULL DEFAULT 0)''')
+        is_pinned   INTEGER NOT NULL DEFAULT 0,
+        is_archived INTEGER NOT NULL DEFAULT 0)''')
     conn.execute('''CREATE TABLE IF NOT EXISTS tags (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT UNIQUE NOT NULL)''')
@@ -36,8 +37,9 @@ def init_db():
         FOREIGN KEY (tag_id)  REFERENCES tags(id)  ON DELETE CASCADE)''')
     # Migrace starších DB
     for col, definition in [
-        ('updated_at', 'DATETIME'),
-        ('is_pinned',  'INTEGER NOT NULL DEFAULT 0'),
+        ('updated_at',  'DATETIME'),
+        ('is_pinned',   'INTEGER NOT NULL DEFAULT 0'),
+        ('is_archived', 'INTEGER NOT NULL DEFAULT 0'),
     ]:
         try:
             conn.execute(f'ALTER TABLE notes ADD COLUMN {col} {definition}')
@@ -80,7 +82,7 @@ def get_tags_for_notes(conn, note_ids):
 
 
 def note_select():
-    return 'SELECT n.id, n.text, n.created_at, n.updated_at, n.is_pinned FROM notes n'
+    return 'SELECT n.id, n.text, n.created_at, n.updated_at, n.is_pinned, n.is_archived FROM notes n'
 
 
 def parse_search(query):
@@ -179,17 +181,20 @@ def get_notes():
                  if sort_by == 'updated_at' else f'n.created_at {order}')
     order_clause = f'n.is_pinned DESC, {secondary}'
 
+    show_archived = request.args.get('archived', '0') == '1'
+    arch_val      = 1 if show_archived else 0
+
     tag_list     = [t.strip().lower() for t in tags_raw.split(',') if t.strip()]
     search_terms = parse_search(search_raw) if search_raw else []
     sel          = note_select()
 
-    # Podmínka pro full-text hledání (OR mezi všemi výrazy)
-    search_cond   = ''
-    search_params = []
+    # Základní podmínka: archivované / živé + full-text hledání
+    base_cond  = f' AND n.is_archived = {arch_val}'
+    base_params: list = []
     if search_terms:
-        conds         = ['LOWER(n.text) LIKE ?' for _ in search_terms]
-        search_cond   = ' AND (' + ' OR '.join(conds) + ')'
-        search_params = [f'%{t}%' for t in search_terms]
+        conds       = ['LOWER(n.text) LIKE ?' for _ in search_terms]
+        base_cond  += ' AND (' + ' OR '.join(conds) + ')'
+        base_params = [f'%{t}%' for t in search_terms]
 
     conn = get_db()
     if tag_list:
@@ -197,24 +202,19 @@ def get_notes():
         if tag_mode == 'and':
             query = (f'{sel} JOIN note_tags nt ON n.id = nt.note_id '
                      f'JOIN tags t ON nt.tag_id = t.id '
-                     f'WHERE t.name IN ({ph}){search_cond} '
+                     f'WHERE t.name IN ({ph}){base_cond} '
                      f'GROUP BY n.id HAVING COUNT(DISTINCT t.name) = {len(tag_list)} '
                      f'ORDER BY {order_clause}')
-            params = tag_list + search_params
         else:
             query = (f'{sel} JOIN note_tags nt ON n.id = nt.note_id '
                      f'JOIN tags t ON nt.tag_id = t.id '
-                     f'WHERE t.name IN ({ph}){search_cond} '
+                     f'WHERE t.name IN ({ph}){base_cond} '
                      f'GROUP BY n.id ORDER BY {order_clause}')
-            params = tag_list + search_params
-        rows = conn.execute(query, params).fetchall()
+        rows = conn.execute(query, tag_list + base_params).fetchall()
     else:
-        if search_cond:
-            rows = conn.execute(
-                f'{sel} WHERE 1=1{search_cond} ORDER BY {order_clause}', search_params
-            ).fetchall()
-        else:
-            rows = conn.execute(f'{sel} ORDER BY {order_clause}').fetchall()
+        rows = conn.execute(
+            f'{sel} WHERE 1=1{base_cond} ORDER BY {order_clause}', base_params
+        ).fetchall()
 
     note_ids = [r['id'] for r in rows]
     tags_map = get_tags_for_notes(conn, note_ids)
@@ -272,6 +272,21 @@ def toggle_pin(note_id):
     conn = get_db()
     res = conn.execute(
         'UPDATE notes SET is_pinned = 1 - is_pinned WHERE id = ?', (note_id,)
+    )
+    if res.rowcount == 0:
+        conn.close()
+        return jsonify({'error': 'Poznámka nenalezena'}), 404
+    conn.commit()
+    row = conn.execute(f'{note_select()} WHERE n.id = ?', (note_id,)).fetchone()
+    conn.close()
+    return jsonify(dict(row))
+
+
+@app.route('/api/notes/<int:note_id>/archive', methods=['PUT'])
+def toggle_archive(note_id):
+    conn = get_db()
+    res = conn.execute(
+        'UPDATE notes SET is_archived = 1 - is_archived WHERE id = ?', (note_id,)
     )
     if res.rowcount == 0:
         conn.close()
