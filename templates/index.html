@@ -566,7 +566,11 @@
   }
 
   document.getElementById('noteInput').addEventListener('keydown', e => {
-    if (e.ctrlKey && e.key === 'Enter') saveNote();
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault(); // zabrání přidání nového řádku
+      saveNote();
+    }
+    // Shift+Enter → nový řádek (výchozí chování prohlížeče)
   });
 
   // ── Statistiky ──
