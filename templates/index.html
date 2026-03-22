@@ -388,6 +388,7 @@ let selectedStatTags = new Set();  // tagy vybrané ve statistikách
 
 // ── Home navigation ───────────────────────────────────────────────────────
 function goHome() {
+  // Reset archive view
   if (showArchived) {
     showArchived = false;
     document.getElementById('notesViewTitle').textContent = 'Uložené poznámky';
@@ -395,6 +396,17 @@ function goHome() {
     btn.textContent = '📦 Archiv';
     btn.classList.remove('active');
   }
+  // Reset tag filters
+  activeFiltTags = [];
+  tagMode = 'or';
+  // Reset search
+  searchQuery = '';
+  const si = document.getElementById('searchInput');
+  if (si) si.value = '';
+  updateSearchHint('');
+  // Re-render filter bar and sidebar
+  renderFilterBar();
+  renderSidebarTags();
   showPage('notes');
   loadNotes();
 }
@@ -421,13 +433,26 @@ function handleBackspaceInList(e, editorEl) {
     node = node.parentNode;
   }
   if (!li) return;
-  const liRange = document.createRange();
-  liRange.selectNodeContents(li);
-  liRange.collapse(true);
-  if (range.compareBoundaryPoints(Range.START_TO_START, liRange) === 0) {
+  // Check if cursor is at the very start of the LI
+  const testRange = document.createRange();
+  testRange.setStart(li, 0);
+  testRange.setEnd(range.startContainer, range.startOffset);
+  if (testRange.toString() === '') {
     e.preventDefault();
     document.execCommand('outdent');
   }
+}
+
+function getListDepth(editorEl) {
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return 0;
+  let node = sel.getRangeAt(0).startContainer;
+  let depth = 0;
+  while (node && node !== editorEl) {
+    if (node.nodeName === 'UL' || node.nodeName === 'OL') depth++;
+    node = node.parentNode;
+  }
+  return depth;
 }
 
 function handleSpaceAutoList(e, editorEl) {
@@ -465,7 +490,13 @@ function setupWysiwygEditor(el, onSave) {
       }
     } else if (e.key === 'Tab') {
       e.preventDefault();
-      if (inList) document.execCommand(e.shiftKey ? 'outdent' : 'indent');
+      if (inList) {
+        if (e.shiftKey) {
+          document.execCommand('outdent');
+        } else if (getListDepth(el) < 3) {
+          document.execCommand('indent');
+        }
+      }
     } else if (e.key === 'Backspace') {
       handleBackspaceInList(e, el);
     } else if (e.key === ' ') {
