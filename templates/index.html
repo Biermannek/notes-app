@@ -17,7 +17,8 @@
 
     /* ── Sidebar ── */
     .sidebar{width:220px;min-height:100vh;background:#1a1a2e;display:flex;flex-direction:column;padding:1.5rem 0;flex-shrink:0;position:sticky;top:0;height:100vh}
-    .sidebar-brand{padding:0 1.25rem 1.5rem;border-bottom:1px solid rgba(255,255,255,.08)}
+    .sidebar-brand{padding:0 1.25rem 1.5rem;border-bottom:1px solid rgba(255,255,255,.08);cursor:pointer;transition:opacity .15s;user-select:none}
+    .sidebar-brand:hover{opacity:.8}
     .sidebar-brand h1{font-size:1.2rem;font-weight:700;color:#fff}
     .sidebar-brand p{font-size:.75rem;color:rgba(255,255,255,.45);margin-top:.2rem}
     .nav{margin-top:1rem;flex:1;overflow-y:auto;overflow-x:hidden}
@@ -143,6 +144,10 @@
     .note-edit-area{display:none;margin-top:.5rem}
     .note-edit-area textarea{min-height:70px;font-size:.95rem;margin-bottom:.5rem;width:100%}
     .note-edit-actions{display:flex;gap:.4rem}
+    .note-editor ul,.note-editor ol,.note-text ul,.note-text ol{padding-left:1.4rem;margin:.15rem 0}
+    .note-editor li,.note-text li{margin:.1rem 0;line-height:1.55}
+    .note-editor ul ul,.note-editor ol ol,.note-editor ul ol,.note-editor ol ul,
+    .note-text ul ul,.note-text ol ol,.note-text ul ol,.note-text ol ul{padding-left:1.2rem;margin:0}
     .note-editor{width:100%;padding:.85rem 1rem;border:2px solid #e0e0e0;border-radius:10px;font-size:1rem;font-family:inherit;min-height:90px;transition:border-color .2s;color:#1a1a2e;outline:none;line-height:1.55;word-break:break-word;cursor:text}
     .note-editor:focus{border-color:#6c63ff}
     .note-editor[contenteditable=true]:empty::before{content:attr(data-placeholder);color:#bbb;pointer-events:none;display:block}
@@ -217,7 +222,7 @@
 
 <!-- Sidebar -->
 <nav class="sidebar">
-  <div class="sidebar-brand">
+  <div class="sidebar-brand" onclick="goHome()" title="Zpět na hlavní přehled">
     <h1>📝 Poznámky</h1>
     <p>Zápisky vždy po ruce</p>
   </div>
@@ -242,6 +247,8 @@
         <button class="fmt-btn" title="Kurzíva" onmousedown="event.preventDefault();fmtNew('italic','*','*')"><i>I</i></button>
         <button class="fmt-btn" title="Podtržené" onmousedown="event.preventDefault();fmtNew('underline','__','__')"><u>U</u></button>
         <button class="fmt-btn" title="Přeškrtnuté" onmousedown="event.preventDefault();fmtNew('strikeThrough','~~','~~')"><s>S</s></button>
+        <button class="fmt-btn" title="Odrážkový seznam" onmousedown="event.preventDefault();fmtNew('insertUnorderedList','','')">•≡</button>
+        <button class="fmt-btn" title="Číslovaný seznam" onmousedown="event.preventDefault();fmtNew('insertOrderedList','','')">1≡</button>
         <div class="editor-mode-toggle">
           <button class="mode-btn active" data-mode="wysiwyg" onclick="setEditorMode('wysiwyg')">WYSIWYG</button>
           <button class="mode-btn" data-mode="md" onclick="setEditorMode('md')">MD</button>
@@ -378,6 +385,99 @@ let allTags         = [];          // [{name,count}]
 let activeFiltTags  = [];          // tagy ve filtru poznámek
 let tagMode         = 'or';
 let selectedStatTags = new Set();  // tagy vybrané ve statistikách
+
+// ── Home navigation ───────────────────────────────────────────────────────
+function goHome() {
+  if (showArchived) {
+    showArchived = false;
+    document.getElementById('notesViewTitle').textContent = 'Uložené poznámky';
+    const btn = document.getElementById('btnArchiveToggle');
+    btn.textContent = '📦 Archiv';
+    btn.classList.remove('active');
+  }
+  showPage('notes');
+  loadNotes();
+}
+
+// ── WYSIWYG editor setup ──────────────────────────────────────────────────
+function isInList(editorEl) {
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return false;
+  let node = sel.getRangeAt(0).startContainer;
+  while (node && node !== editorEl) {
+    if (node.nodeName === 'LI') return true;
+    node = node.parentNode;
+  }
+  return false;
+}
+
+function handleBackspaceInList(e, editorEl) {
+  const sel = window.getSelection();
+  if (!sel.rangeCount || !sel.getRangeAt(0).collapsed) return;
+  const range = sel.getRangeAt(0);
+  let node = range.startContainer, li = null;
+  while (node && node !== editorEl) {
+    if (node.nodeName === 'LI') { li = node; break; }
+    node = node.parentNode;
+  }
+  if (!li) return;
+  const liRange = document.createRange();
+  liRange.selectNodeContents(li);
+  liRange.collapse(true);
+  if (range.compareBoundaryPoints(Range.START_TO_START, liRange) === 0) {
+    e.preventDefault();
+    document.execCommand('outdent');
+  }
+}
+
+function handleSpaceAutoList(e, editorEl) {
+  const sel = window.getSelection();
+  if (!sel.rangeCount || !sel.getRangeAt(0).collapsed) return;
+  const range = sel.getRangeAt(0);
+  const node = range.startContainer;
+  if (node.nodeType !== Node.TEXT_NODE) return;
+  const textBefore = node.textContent.substring(0, range.startOffset);
+  if (textBefore !== '-') return;
+  // Zkontroluj, že jsme na začátku řádku (žádný předchozí sourozenec s obsahem)
+  let prev = node.previousSibling;
+  while (prev && prev.nodeType === Node.TEXT_NODE && !prev.textContent.trim()) prev = prev.previousSibling;
+  if (prev && prev.nodeName !== 'BR') return;
+  e.preventDefault();
+  const delRange = document.createRange();
+  delRange.setStart(node, range.startOffset - 1);
+  delRange.setEnd(node, range.startOffset);
+  sel.removeAllRanges(); sel.addRange(delRange);
+  document.execCommand('delete');
+  document.execCommand('insertUnorderedList');
+}
+
+function setupWysiwygEditor(el, onSave) {
+  el.addEventListener('keydown', e => {
+    if (editorMode !== 'wysiwyg') return;
+    const inList = isInList(el);
+    if (e.key === 'Enter') {
+      if (!e.shiftKey) {
+        if (inList) return; // prohlížeč vytvoří nový <li>
+        e.preventDefault(); onSave();
+      } else {
+        if (!inList) { e.preventDefault(); document.execCommand('insertLineBreak'); }
+        // v listu: Shift+Enter nechej na prohlížeči
+      }
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      if (inList) document.execCommand(e.shiftKey ? 'outdent' : 'indent');
+    } else if (e.key === 'Backspace') {
+      handleBackspaceInList(e, el);
+    } else if (e.key === ' ') {
+      handleSpaceAutoList(e, el);
+    }
+  });
+  el.addEventListener('paste', e => {
+    e.preventDefault();
+    const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+    document.execCommand('insertText', false, text);
+  });
+}
 
 // ── Sidebar tag navigation ────────────────────────────────────────────────
 function tagSortGroup(name) {
@@ -657,6 +757,8 @@ async function loadNotes() {
           <button class="fmt-btn" title="Kurzíva" onmousedown="event.preventDefault();fmtEdit(${n.id},'italic','*','*')"><i>I</i></button>
           <button class="fmt-btn" title="Podtržené" onmousedown="event.preventDefault();fmtEdit(${n.id},'underline','__','__')"><u>U</u></button>
           <button class="fmt-btn" title="Přeškrtnuté" onmousedown="event.preventDefault();fmtEdit(${n.id},'strikeThrough','~~','~~')"><s>S</s></button>
+          <button class="fmt-btn" title="Odrážkový seznam" onmousedown="event.preventDefault();fmtEdit(${n.id},'insertUnorderedList','','')">•≡</button>
+          <button class="fmt-btn" title="Číslovaný seznam" onmousedown="event.preventDefault();fmtEdit(${n.id},'insertOrderedList','','')">1≡</button>
         </div>
         <div id="editWysiwyg-${n.id}" class="note-editor" contenteditable="true" data-placeholder="Uprav poznámku..." style="display:none"></div>
         <textarea id="edit-${n.id}" style="display:none">${esc(n.text)}</textarea>
@@ -691,19 +793,9 @@ async function loadNotes() {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit(n.id); }
       });
     }
-    // WYSIWYG div: Enter = uložit, Shift+Enter = nový řádek; paste = čistý text
+    // WYSIWYG edit editor
     const editDiv = document.getElementById(`editWysiwyg-${n.id}`);
-    if (editDiv) {
-      editDiv.addEventListener('keydown', e => {
-        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit(n.id); }
-        else if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); document.execCommand('insertLineBreak'); }
-      });
-      editDiv.addEventListener('paste', e => {
-        e.preventDefault();
-        const text = (e.clipboardData || window.clipboardData).getData('text/plain');
-        document.execCommand('insertText', false, text);
-      });
-    }
+    if (editDiv) setupWysiwygEditor(editDiv, () => saveEdit(n.id));
   });
 }
 
@@ -818,16 +910,8 @@ async function saveEdit(id) {
   } else showToast('Chyba při ukládání!');
 }
 
-// WYSIWYG new note: Enter = uložit, Shift+Enter = nový řádek; paste = čistý text
-document.getElementById('noteInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveNote(); }
-  else if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); document.execCommand('insertLineBreak'); }
-});
-document.getElementById('noteInput').addEventListener('paste', e => {
-  e.preventDefault();
-  const text = (e.clipboardData || window.clipboardData).getData('text/plain');
-  document.execCommand('insertText', false, text);
-});
+// WYSIWYG new note
+setupWysiwygEditor(document.getElementById('noteInput'), saveNote);
 // MD new note textarea
 document.getElementById('noteInputMd').addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveNote(); }
@@ -958,7 +1042,7 @@ function escAttr(t) {
 }
 
 function isHtmlContent(text) {
-  return /<(strong|em|b|i|u|s|del|br)\b/i.test(text);
+  return /<(strong|em|b|i|u|s|del|br|ul|ol|li)\b/i.test(text);
 }
 
 function mdToHtml(md) {
@@ -977,6 +1061,9 @@ function htmlToMd(html) {
   md = md.replace(/<br\s*\/?>/gi, '\n');
   md = md.replace(/<\/p>/gi, '\n').replace(/<p[^>]*>/gi, '');
   md = md.replace(/<\/div>/gi, '\n').replace(/<div[^>]*>/gi, '');
+  // Lists — přibližná konverze (odrážky zachovají pomlčku, čísla 1.)
+  md = md.replace(/<li[^>]*>/gi, '- ').replace(/<\/li>/gi, '\n');
+  md = md.replace(/<\/?(?:ul|ol)[^>]*>/gi, '');
   md = md.replace(/<strong>([\s\S]*?)<\/strong>/gi, '**$1**');
   md = md.replace(/<b>([\s\S]*?)<\/b>/gi,           '**$1**');
   md = md.replace(/<em>([\s\S]*?)<\/em>/gi,         '*$1*');
@@ -993,7 +1080,7 @@ function renderText(raw) {
   if (!raw) return '';
   if (isHtmlContent(raw)) {
     // Sanitize: povol jen bezpečné inline tagy
-    return raw.replace(/<(?!\/?(?:strong|em|b|i|u|s|del|br)\b)[^>]*>/gi, '');
+    return raw.replace(/<(?!\/?(?:strong|em|b|i|u|s|del|br|ul|ol|li)\b)[^>]*>/gi, '');
   }
   // Legacy markdown
   let t = raw.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
