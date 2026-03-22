@@ -1,11 +1,13 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, session
 from datetime import datetime, timedelta
 from version import __version__
+from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 import os
 import re
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'notes-app-secret-key-change-in-production')
 DB_PATH = os.environ.get('DB_PATH', '/data/notes.db')
 
 
@@ -19,15 +21,23 @@ def get_db():
 
 def init_db():
     conn = get_db()
+    conn.execute('''CREATE TABLE IF NOT EXISTS users (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        username      TEXT UNIQUE NOT NULL,
+        full_name     TEXT NOT NULL,
+        email         TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        created_at    DATETIME DEFAULT (datetime('now', 'localtime')))''')
     conn.execute('''CREATE TABLE IF NOT EXISTS notes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        text TEXT NOT NULL,
-        created_at DATETIME DEFAULT (datetime('now', 'localtime')),
-        updated_at DATETIME,
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id     INTEGER REFERENCES users(id),
+        text        TEXT NOT NULL,
+        created_at  DATETIME DEFAULT (datetime('now', 'localtime')),
+        updated_at  DATETIME,
         is_pinned   INTEGER NOT NULL DEFAULT 0,
         is_archived INTEGER NOT NULL DEFAULT 0)''')
     conn.execute('''CREATE TABLE IF NOT EXISTS tags (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id   INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT UNIQUE NOT NULL)''')
     conn.execute('''CREATE TABLE IF NOT EXISTS note_tags (
         note_id INTEGER NOT NULL,
@@ -40,6 +50,7 @@ def init_db():
         ('updated_at',  'DATETIME'),
         ('is_pinned',   'INTEGER NOT NULL DEFAULT 0'),
         ('is_archived', 'INTEGER NOT NULL DEFAULT 0'),
+        ('user_id',     'INTEGER REFERENCES users(id)'),
     ]:
         try:
             conn.execute(f'ALTER TABLE notes ADD COLUMN {col} {definition}')
@@ -52,7 +63,29 @@ def init_db():
 init_db()
 
 
-# ── helpers ──────────────────────────────────────────────────────────────────
+# ── Auth helpers ──────────────────────────────────────────────────────────────
+
+def current_user_id():
+    return session.get('user_id')
+
+
+def user_filter():
+    """Returns (sql_condition, params) for filtering notes by current user."""
+    uid = current_user_id()
+    if uid:
+        return ' AND n.user_id = ?', [uid]
+    return ' AND n.user_id IS NULL', []
+
+
+def check_note_access(conn, note_id):
+    """Returns True if current session may modify this note."""
+    row = conn.execute('SELECT user_id FROM notes WHERE id = ?', (note_id,)).fetchone()
+    if not row:
+        return False
+    return row['user_id'] == current_user_id()
+
+
+# ── DB helpers ────────────────────────────────────────────────────────────────
 
 def save_tags_for_note(conn, note_id, tag_names):
     conn.execute('DELETE FROM note_tags WHERE note_id = ?', (note_id,))
@@ -100,7 +133,93 @@ def parse_search(query):
     return terms
 
 
-# ── routes ────────────────────────────────────────────────────────────────────
+# ── Auth routes ───────────────────────────────────────────────────────────────
+
+@app.route('/api/auth/me', methods=['GET'])
+def auth_me():
+    uid = current_user_id()
+    if not uid:
+        return jsonify(None)
+    conn = get_db()
+    row = conn.execute(
+        'SELECT id, username, full_name, email FROM users WHERE id = ?', (uid,)
+    ).fetchone()
+    conn.close()
+    if not row:
+        session.clear()
+        return jsonify(None)
+    return jsonify(dict(row))
+
+
+@app.route('/api/auth/login', methods=['POST'])
+def auth_login():
+    data     = request.get_json() or {}
+    username = (data.get('username') or '').strip().lower()
+    password = data.get('password') or ''
+    if not username or not password:
+        return jsonify({'error': 'Vyplňte přihlašovací jméno a heslo'}), 400
+    conn = get_db()
+    row = conn.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
+    conn.close()
+    if not row or not check_password_hash(row['password_hash'], password):
+        return jsonify({'error': 'Nesprávné přihlašovací jméno nebo heslo'}), 401
+    session['user_id'] = row['id']
+    return jsonify({
+        'id': row['id'], 'username': row['username'],
+        'full_name': row['full_name'], 'email': row['email']
+    })
+
+
+@app.route('/api/auth/register', methods=['POST'])
+def auth_register():
+    data      = request.get_json() or {}
+    username  = (data.get('username')  or '').strip().lower()
+    full_name = (data.get('full_name') or '').strip()
+    email     = (data.get('email')     or '').strip().lower()
+    password  = data.get('password')  or ''
+    password2 = data.get('password2') or ''
+
+    if not all([username, full_name, email, password, password2]):
+        return jsonify({'error': 'Všechna pole jsou povinná'}), 400
+    if not re.match(r'^[a-z0-9_]{3,30}$', username):
+        return jsonify({'error': 'Uživatelské jméno: 3–30 znaků, pouze a-z, 0-9 a _'}), 400
+    if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
+        return jsonify({'error': 'Neplatný formát e-mailu'}), 400
+    if len(password) < 6:
+        return jsonify({'error': 'Heslo musí mít alespoň 6 znaků'}), 400
+    if password != password2:
+        return jsonify({'error': 'Hesla se neshodují'}), 400
+
+    conn = get_db()
+    try:
+        conn.execute(
+            'INSERT INTO users (username, full_name, email, password_hash) VALUES (?, ?, ?, ?)',
+            (username, full_name, email, generate_password_hash(password))
+        )
+        conn.commit()
+        row = conn.execute(
+            'SELECT id, username, full_name, email FROM users WHERE username = ?', (username,)
+        ).fetchone()
+        session['user_id'] = row['id']
+        conn.close()
+        return jsonify(dict(row)), 201
+    except sqlite3.IntegrityError as e:
+        conn.close()
+        msg = str(e)
+        if 'username' in msg:
+            return jsonify({'error': 'Toto uživatelské jméno je již obsazeno'}), 409
+        if 'email' in msg:
+            return jsonify({'error': 'Tento e-mail je již registrován'}), 409
+        return jsonify({'error': 'Chyba při registraci'}), 409
+
+
+@app.route('/api/auth/logout', methods=['POST'])
+def auth_logout():
+    session.clear()
+    return jsonify({'ok': True})
+
+
+# ── App routes ────────────────────────────────────────────────────────────────
 
 @app.route('/')
 def index():
@@ -145,20 +264,31 @@ self.addEventListener('fetch', e => {
 
 @app.route('/api/tags', methods=['GET'])
 def get_tags():
-    q = request.args.get('q', '').strip().lower()
+    q   = request.args.get('q', '').strip().lower()
+    uid = current_user_id()
+    if uid:
+        notes_cond, notes_params = 'n.user_id = ?', [uid]
+    else:
+        notes_cond, notes_params = 'n.user_id IS NULL', []
+
     conn = get_db()
     if q:
         rows = conn.execute(
-            'SELECT t.name, COUNT(nt.note_id) as cnt FROM tags t '
-            'LEFT JOIN note_tags nt ON t.id = nt.tag_id '
-            'WHERE t.name LIKE ? GROUP BY t.id ORDER BY cnt DESC, t.name',
-            (f'%{q}%',)
+            f'SELECT t.name, COUNT(DISTINCT nt.note_id) as cnt FROM tags t '
+            f'INNER JOIN note_tags nt ON t.id = nt.tag_id '
+            f'INNER JOIN notes n ON nt.note_id = n.id '
+            f'WHERE t.name LIKE ? AND {notes_cond} '
+            f'GROUP BY t.id ORDER BY cnt DESC, t.name',
+            [f'%{q}%'] + notes_params
         ).fetchall()
     else:
         rows = conn.execute(
-            'SELECT t.name, COUNT(nt.note_id) as cnt FROM tags t '
-            'LEFT JOIN note_tags nt ON t.id = nt.tag_id '
-            'GROUP BY t.id ORDER BY cnt DESC, t.name'
+            f'SELECT t.name, COUNT(DISTINCT nt.note_id) as cnt FROM tags t '
+            f'INNER JOIN note_tags nt ON t.id = nt.tag_id '
+            f'INNER JOIN notes n ON nt.note_id = n.id '
+            f'WHERE {notes_cond} '
+            f'GROUP BY t.id ORDER BY cnt DESC, t.name',
+            notes_params
         ).fetchall()
     conn.close()
     return jsonify([{'name': r['name'], 'count': r['cnt']} for r in rows])
@@ -176,25 +306,23 @@ def get_notes():
     if order    not in ('asc', 'desc'):              order   = 'desc'
     if tag_mode not in ('or', 'and'):                tag_mode = 'or'
 
-    # Připnuté vždy první, pak řazení dle zvoleného kritéria
-    secondary = (f'COALESCE(n.updated_at, n.created_at) {order}'
-                 if sort_by == 'updated_at' else f'n.created_at {order}')
+    secondary    = (f'COALESCE(n.updated_at, n.created_at) {order}'
+                    if sort_by == 'updated_at' else f'n.created_at {order}')
     order_clause = f'n.is_pinned DESC, {secondary}'
 
     show_archived = request.args.get('archived', '0') == '1'
     arch_val      = 1 if show_archived else 0
+    tag_list      = [t.strip().lower() for t in tags_raw.split(',') if t.strip()]
+    search_terms  = parse_search(search_raw) if search_raw else []
+    sel           = note_select()
 
-    tag_list     = [t.strip().lower() for t in tags_raw.split(',') if t.strip()]
-    search_terms = parse_search(search_raw) if search_raw else []
-    sel          = note_select()
-
-    # Základní podmínka: archivované / živé + full-text hledání
-    base_cond  = f' AND n.is_archived = {arch_val}'
-    base_params: list = []
+    user_cond, user_params = user_filter()
+    base_cond   = f'{user_cond} AND n.is_archived = {arch_val}'
+    base_params = user_params[:]
     if search_terms:
         conds       = ['LOWER(n.text) LIKE ?' for _ in search_terms]
         base_cond  += ' AND (' + ' OR '.join(conds) + ')'
-        base_params = [f'%{t}%' for t in search_terms]
+        base_params += [f'%{t}%' for t in search_terms]
 
     conn = get_db()
     if tag_list:
@@ -233,8 +361,11 @@ def add_note():
     data = request.get_json()
     if not data or not data.get('text', '').strip():
         return jsonify({'error': 'Text nesmí být prázdný'}), 400
+    uid  = current_user_id()
     conn = get_db()
-    cursor = conn.execute('INSERT INTO notes (text) VALUES (?)', (data['text'].strip(),))
+    cursor = conn.execute(
+        'INSERT INTO notes (text, user_id) VALUES (?, ?)', (data['text'].strip(), uid)
+    )
     note_id = cursor.lastrowid
     save_tags_for_note(conn, note_id, data.get('tags', []))
     conn.commit()
@@ -251,6 +382,9 @@ def update_note(note_id):
     if not data or not data.get('text', '').strip():
         return jsonify({'error': 'Text nesmí být prázdný'}), 400
     conn = get_db()
+    if not check_note_access(conn, note_id):
+        conn.close()
+        return jsonify({'error': 'Přístup odepřen'}), 403
     res = conn.execute(
         "UPDATE notes SET text = ?, updated_at = datetime('now', 'localtime') WHERE id = ?",
         (data['text'].strip(), note_id)
@@ -270,6 +404,9 @@ def update_note(note_id):
 @app.route('/api/notes/<int:note_id>/pin', methods=['PUT'])
 def toggle_pin(note_id):
     conn = get_db()
+    if not check_note_access(conn, note_id):
+        conn.close()
+        return jsonify({'error': 'Přístup odepřen'}), 403
     res = conn.execute(
         'UPDATE notes SET is_pinned = 1 - is_pinned WHERE id = ?', (note_id,)
     )
@@ -285,6 +422,9 @@ def toggle_pin(note_id):
 @app.route('/api/notes/<int:note_id>/archive', methods=['PUT'])
 def toggle_archive(note_id):
     conn = get_db()
+    if not check_note_access(conn, note_id):
+        conn.close()
+        return jsonify({'error': 'Přístup odepřen'}), 403
     res = conn.execute(
         'UPDATE notes SET is_archived = 1 - is_archived WHERE id = ?', (note_id,)
     )
@@ -312,19 +452,28 @@ def get_daily_stats():
     elif not date_from or not date_to:
         date_from = (today - timedelta(days=6)).isoformat()
         date_to   = today.isoformat()
+
     col = 'created_at' if stat_type == 'created' else 'updated_at'
+    uid = current_user_id()
+    if uid:
+        user_cond, user_params = 'AND user_id = ?', [uid]
+    else:
+        user_cond, user_params = 'AND user_id IS NULL', []
+
     conn = get_db()
     if stat_type == 'edited':
         rows = conn.execute(
             f'SELECT date({col}) as day, COUNT(*) as count FROM notes '
-            f'WHERE {col} IS NOT NULL AND date({col}) BETWEEN ? AND ? GROUP BY day ORDER BY day',
-            (date_from, date_to)
+            f'WHERE {col} IS NOT NULL AND date({col}) BETWEEN ? AND ? {user_cond} '
+            f'GROUP BY day ORDER BY day',
+            [date_from, date_to] + user_params
         ).fetchall()
     else:
         rows = conn.execute(
             f'SELECT date({col}) as day, COUNT(*) as count FROM notes '
-            f'WHERE date({col}) BETWEEN ? AND ? GROUP BY day ORDER BY day',
-            (date_from, date_to)
+            f'WHERE date({col}) BETWEEN ? AND ? {user_cond} '
+            f'GROUP BY day ORDER BY day',
+            [date_from, date_to] + user_params
         ).fetchall()
     conn.close()
     data_map = {r['day']: r['count'] for r in rows}
@@ -339,20 +488,31 @@ def get_daily_stats():
 def get_tag_stats():
     filter_raw = request.args.get('tags', '')
     tag_filter = [t.strip().lower() for t in filter_raw.split(',') if t.strip()]
+    uid = current_user_id()
+    if uid:
+        notes_cond, notes_params = 'n.user_id = ?', [uid]
+    else:
+        notes_cond, notes_params = 'n.user_id IS NULL', []
+
     conn = get_db()
     if tag_filter:
         ph   = ','.join('?' * len(tag_filter))
         rows = conn.execute(
             f'SELECT t.name, COUNT(DISTINCT nt.note_id) as note_count FROM tags t '
-            f'LEFT JOIN note_tags nt ON t.id = nt.tag_id '
-            f'WHERE t.name IN ({ph}) GROUP BY t.id ORDER BY note_count DESC, t.name',
-            tag_filter
+            f'INNER JOIN note_tags nt ON t.id = nt.tag_id '
+            f'INNER JOIN notes n ON nt.note_id = n.id '
+            f'WHERE t.name IN ({ph}) AND {notes_cond} '
+            f'GROUP BY t.id ORDER BY note_count DESC, t.name',
+            tag_filter + notes_params
         ).fetchall()
     else:
         rows = conn.execute(
-            'SELECT t.name, COUNT(DISTINCT nt.note_id) as note_count FROM tags t '
-            'LEFT JOIN note_tags nt ON t.id = nt.tag_id '
-            'GROUP BY t.id ORDER BY note_count DESC, t.name'
+            f'SELECT t.name, COUNT(DISTINCT nt.note_id) as note_count FROM tags t '
+            f'INNER JOIN note_tags nt ON t.id = nt.tag_id '
+            f'INNER JOIN notes n ON nt.note_id = n.id '
+            f'WHERE {notes_cond} '
+            f'GROUP BY t.id ORDER BY note_count DESC, t.name',
+            notes_params
         ).fetchall()
     conn.close()
     return jsonify([{'name': r['name'], 'count': r['note_count']} for r in rows])

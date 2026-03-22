@@ -204,6 +204,32 @@
     .toast{position:fixed;bottom:1.5rem;right:1.5rem;background:#1a1a2e;color:#fff;padding:.75rem 1.2rem;border-radius:10px;font-size:.9rem;opacity:0;transform:translateY(10px);transition:all .3s;pointer-events:none;z-index:999}
     .toast.show{opacity:1;transform:translateY(0)}
 
+    /* ── Topbar (user info / login button) ── */
+    .topbar{display:flex;justify-content:flex-end;align-items:center;padding:.4rem 0 .75rem;margin-bottom:.25rem;min-height:2.25rem;gap:.75rem}
+    .topbar-user{display:flex;align-items:center;gap:.6rem}
+    .topbar-avatar{width:1.8rem;height:1.8rem;border-radius:50%;background:#6c63ff;color:#fff;display:flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:700;flex-shrink:0}
+    .topbar-username{font-weight:600;color:#1a1a2e;font-size:.88rem}
+    .btn-logout{padding:.3rem .75rem;border:1.5px solid #e0e0e0;border-radius:8px;background:#fff;color:#777;font-size:.8rem;font-weight:600;cursor:pointer;transition:all .15s}
+    .btn-logout:hover{border-color:#f87171;color:#f87171}
+    .btn-login-top{padding:.35rem .85rem;border:none;border-radius:8px;background:#6c63ff;color:#fff;font-size:.82rem;font-weight:600;cursor:pointer;transition:background .15s}
+    .btn-login-top:hover{background:#5a52d5}
+
+    /* ── Auth pages ── */
+    .auth-wrap{display:flex;justify-content:center;padding-top:1rem}
+    .auth-card{width:100%;max-width:440px;background:#fff;border-radius:16px;padding:2rem;box-shadow:0 2px 16px rgba(0,0,0,.09)}
+    .auth-title{font-size:1.4rem;font-weight:700;margin-bottom:.3rem;color:#1a1a2e}
+    .auth-subtitle{font-size:.85rem;color:#999;margin-bottom:1.5rem}
+    .auth-field{margin-bottom:1rem}
+    .auth-field label{display:block;font-weight:600;font-size:.88rem;margin-bottom:.35rem;color:#444}
+    .auth-field input{width:100%;padding:.75rem 1rem;border:2px solid #e0e0e0;border-radius:10px;font-size:.97rem;font-family:inherit;color:#1a1a2e;transition:border-color .2s;background:#fff}
+    .auth-field input:focus{outline:none;border-color:#6c63ff}
+    .auth-field small{color:#aaa;font-size:.75rem;font-weight:400}
+    .auth-error{color:#ef4444;font-size:.84rem;margin-bottom:.75rem;padding:.45rem .75rem;background:#fff5f5;border-radius:8px;border-left:3px solid #ef4444;display:none}
+    .auth-error.visible{display:block}
+    .auth-link{font-size:.86rem;color:#888;margin-top:1.1rem;text-align:center}
+    .auth-link a{color:#6c63ff;cursor:pointer;font-weight:600;text-decoration:none}
+    .auth-link a:hover{text-decoration:underline}
+
     /* ── Responsive ── */
     @media(max-width:640px){
       body{flex-direction:column}
@@ -235,6 +261,16 @@
 </nav>
 
 <main class="main">
+
+  <!-- Topbar: user info / login -->
+  <div id="topbar" class="topbar">
+    <div id="topbarUser" class="topbar-user" style="display:none">
+      <div class="topbar-avatar" id="topbarInitials"></div>
+      <span class="topbar-username" id="topbarName"></span>
+      <button class="btn-logout" onclick="doLogout()">Odhlásit se</button>
+    </div>
+    <button id="topbarLoginBtn" class="btn-login-top" onclick="showPage('login')" style="display:none">🔐 Přihlásit se</button>
+  </div>
 
   <!-- PAGE: Poznámky -->
   <div class="page active" id="page-notes">
@@ -366,11 +402,66 @@
     </div>
   </div>
 
+  <!-- PAGE: Přihlášení -->
+  <div class="page" id="page-login">
+    <div class="auth-wrap">
+      <div class="auth-card">
+        <div class="auth-title">🔐 Přihlášení</div>
+        <div class="auth-subtitle">Přihlaste se ke svému účtu</div>
+        <div class="auth-error" id="loginError"></div>
+        <div class="auth-field">
+          <label>Uživatelské jméno</label>
+          <input id="loginUsername" type="text" placeholder="Zadejte uživatelské jméno" autocomplete="username"/>
+        </div>
+        <div class="auth-field">
+          <label>Heslo</label>
+          <input id="loginPassword" type="password" placeholder="Zadejte heslo" autocomplete="current-password"/>
+        </div>
+        <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:.25rem" onclick="doLogin()">Přihlásit se</button>
+        <div class="auth-link">Nemáte účet? <a onclick="showPage('register')">Zaregistrujte se</a></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE: Registrace -->
+  <div class="page" id="page-register">
+    <div class="auth-wrap">
+      <div class="auth-card">
+        <div class="auth-title">📝 Registrace</div>
+        <div class="auth-subtitle">Vytvořte si nový účet</div>
+        <div class="auth-error" id="regError"></div>
+        <div class="auth-field">
+          <label>Uživatelské jméno <small>(3–30 znaků, a–z, 0–9, _)</small></label>
+          <input id="regUsername" type="text" placeholder="Zadejte uživatelské jméno" autocomplete="username"/>
+        </div>
+        <div class="auth-field">
+          <label>Jméno a příjmení</label>
+          <input id="regFullName" type="text" placeholder="Zadejte jméno a příjmení" autocomplete="name"/>
+        </div>
+        <div class="auth-field">
+          <label>E-mail</label>
+          <input id="regEmail" type="email" placeholder="Zadejte e-mail" autocomplete="email"/>
+        </div>
+        <div class="auth-field">
+          <label>Heslo <small>(min. 6 znaků)</small></label>
+          <input id="regPassword" type="password" placeholder="Zadejte heslo" autocomplete="new-password"/>
+        </div>
+        <div class="auth-field">
+          <label>Heslo znovu</label>
+          <input id="regPassword2" type="password" placeholder="Zopakujte heslo" autocomplete="new-password"/>
+        </div>
+        <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:.25rem" onclick="doRegister()">Zaregistrovat se</button>
+        <div class="auth-link">Máte již účet? <a onclick="showPage('login')">Přihlaste se</a></div>
+      </div>
+    </div>
+  </div>
+
 </main>
 <div class="toast" id="toast"></div>
 
 <script>
 // ── State ──────────────────────────────────────────────────────────────────
+let currentUser     = null;
 let editingNoteId   = null;
 let editorMode      = 'wysiwyg';   // 'wysiwyg' | 'md'
 let showArchived    = false;
@@ -557,12 +648,108 @@ function tagStyle(name) {
   return { color: `hsl(${hue},55%,35%)`, bg: `hsl(${hue},75%,90%)` };
 }
 
+// ── Auth ──────────────────────────────────────────────────────────────────
+function updateTopbar() {
+  const userDiv  = document.getElementById('topbarUser');
+  const loginBtn = document.getElementById('topbarLoginBtn');
+  const nameEl   = document.getElementById('topbarName');
+  const initEl   = document.getElementById('topbarInitials');
+  if (currentUser) {
+    nameEl.textContent   = currentUser.full_name;
+    initEl.textContent   = currentUser.full_name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+    userDiv.style.display  = 'flex';
+    loginBtn.style.display = 'none';
+  } else {
+    userDiv.style.display  = 'none';
+    loginBtn.style.display = 'inline-flex';
+  }
+}
+
+async function loadCurrentUser() {
+  try {
+    const r  = await fetch('/api/auth/me');
+    const data = await r.json();
+    currentUser = data;  // null when not logged in
+  } catch (e) {
+    currentUser = null;
+  }
+  updateTopbar();
+}
+
+async function doLogin() {
+  const username = document.getElementById('loginUsername').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const errEl    = document.getElementById('loginError');
+  errEl.classList.remove('visible');
+  if (!username || !password) {
+    errEl.textContent = 'Vyplňte všechna pole'; errEl.classList.add('visible'); return;
+  }
+  try {
+    const r    = await fetch('/api/auth/login', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ username, password })
+    });
+    const data = await r.json();
+    if (!r.ok) { errEl.textContent = data.error || 'Chyba přihlášení'; errEl.classList.add('visible'); return; }
+    currentUser = data;
+    updateTopbar();
+    document.getElementById('loginUsername').value = '';
+    document.getElementById('loginPassword').value = '';
+    showPage('notes');
+    await loadAllTags();
+    loadNotes();
+    showToast('Vítejte, ' + data.full_name + '! 👋');
+  } catch (e) {
+    errEl.textContent = 'Chyba spojení se serverem'; errEl.classList.add('visible');
+  }
+}
+
+async function doRegister() {
+  const username  = document.getElementById('regUsername').value.trim();
+  const full_name = document.getElementById('regFullName').value.trim();
+  const email     = document.getElementById('regEmail').value.trim();
+  const password  = document.getElementById('regPassword').value;
+  const password2 = document.getElementById('regPassword2').value;
+  const errEl     = document.getElementById('regError');
+  errEl.classList.remove('visible');
+  try {
+    const r    = await fetch('/api/auth/register', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ username, full_name, email, password, password2 })
+    });
+    const data = await r.json();
+    if (!r.ok) { errEl.textContent = data.error || 'Chyba registrace'; errEl.classList.add('visible'); return; }
+    currentUser = data;
+    updateTopbar();
+    ['regUsername','regFullName','regEmail','regPassword','regPassword2'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    showPage('notes');
+    await loadAllTags();
+    loadNotes();
+    showToast('Registrace úspěšná! Vítejte, ' + data.full_name + ' 🎉');
+  } catch (e) {
+    errEl.textContent = 'Chyba spojení se serverem'; errEl.classList.add('visible');
+  }
+}
+
+async function doLogout() {
+  await fetch('/api/auth/logout', { method: 'POST' });
+  currentUser = null;
+  updateTopbar();
+  showPage('notes');
+  await loadAllTags();
+  loadNotes();
+  showToast('Odhlášení proběhlo úspěšně');
+}
+
 // ── Navigation ────────────────────────────────────────────────────────────
 function showPage(page) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('page-' + page).classList.add('active');
-  document.getElementById('nav-' + page).classList.add('active');
+  const navEl = document.getElementById('nav-' + page);
+  if (navEl) navEl.classList.add('active');
   if (page === 'stats') { loadAllTags().then(buildTagStatFilter); loadDailyStats(); }
 }
 function showStatsPanel(panel) {
@@ -1210,8 +1397,23 @@ function showToast(msg) {
 
 // ── Init ───────────────────────────────────────────────────────────────────
 makeTagInputComponent('newTagWrap','newTagChips','newTagInput','newTagDropdown');
-loadAllTags();
-loadNotes();
+
+// Auth form Enter keys
+document.getElementById('loginPassword').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doLogin();
+});
+document.getElementById('loginUsername').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('loginPassword').focus();
+});
+document.getElementById('regPassword2').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doRegister();
+});
+
+// Load current user first, then notes
+loadCurrentUser().then(() => {
+  loadAllTags();
+  loadNotes();
+});
 
 document.getElementById('searchInput').addEventListener('input', e => {
   clearTimeout(searchDebounce);
