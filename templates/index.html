@@ -20,11 +20,16 @@
     .sidebar-brand{padding:0 1.25rem 1.5rem;border-bottom:1px solid rgba(255,255,255,.08)}
     .sidebar-brand h1{font-size:1.2rem;font-weight:700;color:#fff}
     .sidebar-brand p{font-size:.75rem;color:rgba(255,255,255,.45);margin-top:.2rem}
-    .nav{margin-top:1rem;flex:1}
+    .nav{margin-top:1rem;flex:1;overflow-y:auto;overflow-x:hidden}
     .nav-item{display:flex;align-items:center;gap:.75rem;padding:.7rem 1.25rem;color:rgba(255,255,255,.6);font-size:.92rem;font-weight:500;cursor:pointer;border-left:3px solid transparent;transition:all .15s;user-select:none}
     .nav-item:hover{color:#fff;background:rgba(255,255,255,.05)}
     .nav-item.active{color:#fff;border-left-color:#6c63ff;background:rgba(108,99,255,.15)}
     .nav-icon{font-size:1.1rem;width:1.3rem;text-align:center}
+    .nav-sub{padding-bottom:.25rem}
+    .nav-sub-item{display:flex;align-items:center;gap:.4rem;padding:.38rem 1.25rem .38rem 2.5rem;color:rgba(255,255,255,.45);font-size:.8rem;font-weight:500;cursor:pointer;border-left:3px solid transparent;transition:all .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;user-select:none}
+    .nav-sub-item:hover{color:rgba(255,255,255,.85);background:rgba(255,255,255,.04)}
+    .nav-sub-item.active{color:#fff;background:rgba(108,99,255,.12)}
+    .nav-sub-hash{font-size:.75rem;flex-shrink:0;opacity:.7}
     .sidebar-footer{padding:.75rem 1.25rem;font-size:.72rem;color:rgba(255,255,255,.3);border-top:1px solid rgba(255,255,255,.08);margin-top:auto}
 
     /* ── Main ── */
@@ -203,6 +208,7 @@
       .nav{display:flex;flex-direction:row;margin-top:0}
       .nav-item{border-left:none;border-bottom:3px solid transparent;padding:.75rem 1rem}
       .nav-item.active{border-left-color:transparent;border-bottom-color:#6c63ff}
+      .nav-sub{display:none}
       .main{padding:1rem}
     }
   </style>
@@ -217,6 +223,7 @@
   </div>
   <div class="nav">
     <div class="nav-item active" onclick="showPage('notes')" id="nav-notes"><span class="nav-icon">📋</span> Poznámky</div>
+    <div class="nav-sub" id="navTagList"></div>
     <div class="nav-item" onclick="showPage('stats')" id="nav-stats"><span class="nav-icon">📊</span> Statistiky</div>
   </div>
   <div class="sidebar-footer">Verze: {{ version }}</div>
@@ -372,6 +379,42 @@ let activeFiltTags  = [];          // tagy ve filtru poznámek
 let tagMode         = 'or';
 let selectedStatTags = new Set();  // tagy vybrané ve statistikách
 
+// ── Sidebar tag navigation ────────────────────────────────────────────────
+function tagSortGroup(name) {
+  const c = (name[0] || '');
+  if (/[0-9]/.test(c)) return 1;
+  if (/[a-záčďéěíňóřšťúůýžÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ]/i.test(c)) return 2;
+  return 0; // speciální znaky jako první
+}
+function compareTags(a, b) {
+  const ga = tagSortGroup(a.name), gb = tagSortGroup(b.name);
+  if (ga !== gb) return ga - gb;
+  return a.name.localeCompare(b.name, 'cs');
+}
+function renderSidebarTags() {
+  const container = document.getElementById('navTagList');
+  if (!container) return;
+  const sorted = [...allTags].sort(compareTags);
+  const singleActive = activeFiltTags.length === 1 ? activeFiltTags[0] : null;
+  container.innerHTML = sorted.map(t => {
+    const s = tagStyle(t.name);
+    const active = singleActive === t.name;
+    return `<div class="nav-sub-item${active ? ' active' : ''}"
+                 style="border-left-color:${active ? s.color : 'transparent'}"
+                 onclick="selectSidebarTag('${t.name.replace(/'/g,"\\'")}')">
+              <span class="nav-sub-hash" style="color:${s.color}">#</span>${t.name}
+            </div>`;
+  }).join('');
+}
+function selectSidebarTag(name) {
+  showPage('notes');
+  activeFiltTags = [name];
+  tagMode = 'or';
+  renderFilterBar();
+  renderSidebarTags();
+  loadNotes();
+}
+
 // ── Tag colors ────────────────────────────────────────────────────────────
 function tagHue(name) {
   let h = 0;
@@ -404,6 +447,7 @@ async function loadAllTags() {
   const res = await fetch('/api/tags');
   allTags = await res.json();
   renderFilterBar();
+  renderSidebarTags();
   return allTags;
 }
 
@@ -536,6 +580,7 @@ function addFilterTag(name) {
 function clearTagFilter() {
   activeFiltTags = [];
   renderFilterBar();
+  renderSidebarTags();
   loadNotes();
 }
 
@@ -560,6 +605,7 @@ function toggleFilterTag(name) {
   if (activeFiltTags.includes(name)) activeFiltTags = activeFiltTags.filter(t => t !== name);
   else activeFiltTags.push(name);
   renderFilterBar();
+  renderSidebarTags();
   loadNotes();
 }
 
