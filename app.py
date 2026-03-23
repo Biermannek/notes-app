@@ -57,6 +57,15 @@ def init_db():
         show_public_notes INTEGER NOT NULL DEFAULT 1,
         accept_shares     INTEGER NOT NULL DEFAULT 1,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS login_failures (
+        username     TEXT PRIMARY KEY,
+        failed_count INTEGER NOT NULL DEFAULT 0,
+        last_failed  DATETIME,
+        locked_until DATETIME)''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS ip_login_attempts (
+        ip           TEXT NOT NULL,
+        attempted_at DATETIME NOT NULL DEFAULT (datetime('now', 'localtime')))''')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_ip_attempts ON ip_login_attempts(ip, attempted_at)')
     # Migrace starších DB
     for col, definition in [
         ('updated_at',  'DATETIME'),
@@ -199,6 +208,78 @@ def parse_search(query):
     return terms
 
 
+# ── Login security helpers ────────────────────────────────────────────────────
+
+def get_client_ip():
+    """Get real client IP, respecting X-Forwarded-For from reverse proxy."""
+    xff = request.headers.get('X-Forwarded-For', '')
+    if xff:
+        return xff.split(',')[0].strip()
+    return request.remote_addr or 'unknown'
+
+
+def record_ip_attempt(conn, ip):
+    """Record a login attempt for this IP and clean up entries older than 1 minute."""
+    conn.execute(
+        "DELETE FROM ip_login_attempts WHERE attempted_at < datetime('now', 'localtime', '-1 minute')"
+    )
+    conn.execute("INSERT INTO ip_login_attempts (ip) VALUES (?)", (ip,))
+    conn.commit()
+
+
+def check_ip_rate_limit(conn, ip):
+    """Returns True if this IP has made more than 10 attempts in the last minute."""
+    count = conn.execute(
+        "SELECT COUNT(*) FROM ip_login_attempts "
+        "WHERE ip = ? AND attempted_at >= datetime('now', 'localtime', '-1 minute')",
+        (ip,)
+    ).fetchone()[0]
+    return count > 10
+
+
+def check_user_lockout(conn, username):
+    """Returns (is_locked, locked_until_str) or (False, None).
+    If lockout has expired, resets the counter so user gets fresh 3 attempts.
+    """
+    row = conn.execute(
+        'SELECT locked_until FROM login_failures WHERE username = ?', (username,)
+    ).fetchone()
+    if not row or not row['locked_until']:
+        return False, None
+    still_locked = conn.execute(
+        "SELECT locked_until > datetime('now', 'localtime') FROM login_failures WHERE username = ?",
+        (username,)
+    ).fetchone()[0]
+    if still_locked:
+        return True, row['locked_until']
+    # Lockout expired – reset so user gets fresh 3 attempts
+    conn.execute('DELETE FROM login_failures WHERE username = ?', (username,))
+    conn.commit()
+    return False, None
+
+
+def record_failed_login(conn, username):
+    """Increment failed login count. After 3rd failure, locks account for 5 minutes."""
+    conn.execute(
+        '''INSERT INTO login_failures (username, failed_count, last_failed, locked_until)
+           VALUES (?, 1, datetime('now', 'localtime'), NULL)
+           ON CONFLICT(username) DO UPDATE SET
+               failed_count = login_failures.failed_count + 1,
+               last_failed  = datetime('now', 'localtime'),
+               locked_until = CASE WHEN login_failures.failed_count + 1 >= 3
+                              THEN datetime('now', 'localtime', '+5 minutes')
+                              ELSE NULL END''',
+        (username,)
+    )
+    conn.commit()
+
+
+def reset_login_failures(conn, username):
+    """Clear failed login counter after successful authentication."""
+    conn.execute('DELETE FROM login_failures WHERE username = ?', (username,))
+    conn.commit()
+
+
 # ── Auth routes ───────────────────────────────────────────────────────────────
 
 @app.route('/api/auth/me', methods=['GET'])
@@ -224,11 +305,37 @@ def auth_login():
     password = data.get('password') or ''
     if not username or not password:
         return jsonify({'error': 'Vyplňte přihlašovací jméno a heslo'}), 400
+
+    ip   = get_client_ip()
     conn = get_db()
+
+    # 1) Per-user lockout check
+    is_locked, locked_until = check_user_lockout(conn, username)
+    if is_locked:
+        conn.close()
+        try:
+            dt = datetime.strptime(locked_until, '%Y-%m-%d %H:%M:%S')
+            time_str = dt.strftime('%H:%M:%S')
+        except Exception:
+            time_str = str(locked_until)
+        return jsonify({'error': f'Přihlášení je zablokováno do {time_str}. Zkuste to prosím až po uvedeném čase.'}), 423
+
+    # 2) IP rate limit: record attempt, then check (10 pokusů za minutu)
+    record_ip_attempt(conn, ip)
+    if check_ip_rate_limit(conn, ip):
+        conn.close()
+        return jsonify({'error': 'Příliš mnoho pokusů o přihlášení. Zkuste to za chvíli.'}), 429
+
+    # 3) Verify credentials
     row = conn.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
-    conn.close()
     if not row or not check_password_hash(row['password_hash'], password):
+        record_failed_login(conn, username)
+        conn.close()
         return jsonify({'error': 'Nesprávné přihlašovací jméno nebo heslo'}), 401
+
+    # 4) Success – reset failure counter and create session
+    reset_login_failures(conn, username)
+    conn.close()
     session['user_id'] = row['id']
     return jsonify({
         'id': row['id'], 'username': row['username'],
