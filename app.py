@@ -259,7 +259,8 @@ def check_user_lockout(conn, username):
 
 
 def record_failed_login(conn, username):
-    """Increment failed login count. After 3rd failure, locks account for 5 minutes."""
+    """Increment failed login count. After 3rd failure, locks account for 5 minutes.
+    Returns the new failed_count."""
     conn.execute(
         '''INSERT INTO login_failures (username, failed_count, last_failed, locked_until)
            VALUES (?, 1, datetime('now', 'localtime'), NULL)
@@ -272,6 +273,8 @@ def record_failed_login(conn, username):
         (username,)
     )
     conn.commit()
+    row = conn.execute('SELECT failed_count FROM login_failures WHERE username = ?', (username,)).fetchone()
+    return row['failed_count'] if row else 1
 
 
 def reset_login_failures(conn, username):
@@ -329,8 +332,10 @@ def auth_login():
     # 3) Verify credentials
     row = conn.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
     if not row or not check_password_hash(row['password_hash'], password):
-        record_failed_login(conn, username)
+        new_count = record_failed_login(conn, username)
         conn.close()
+        if new_count == 2:
+            return jsonify({'error': 'Nesprávné přihlašovací jméno nebo heslo. Pozor: při dalším neúspěšném pokusu bude přihlášení zablokováno na 5 minut.'}), 401
         return jsonify({'error': 'Nesprávné přihlašovací jméno nebo heslo'}), 401
 
     # 4) Success – reset failure counter and create session
