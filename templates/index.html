@@ -676,6 +676,20 @@ async function loadCurrentUser() {
   updateTopbar();
 }
 
+function resetAppState() {
+  activeFiltTags = [];
+  tagMode = 'or';
+  searchQuery = '';
+  showArchived = false;
+  const si = document.getElementById('searchInput');
+  if (si) si.value = '';
+  updateSearchHint('');
+  const btn = document.getElementById('btnArchiveToggle');
+  if (btn) { btn.textContent = '📦 Archiv'; btn.classList.remove('active'); }
+  const title = document.getElementById('notesViewTitle');
+  if (title) title.textContent = 'Uložené poznámky';
+}
+
 async function doLogin() {
   const username = document.getElementById('loginUsername').value.trim();
   const password = document.getElementById('loginPassword').value;
@@ -695,9 +709,10 @@ async function doLogin() {
     updateTopbar();
     document.getElementById('loginUsername').value = '';
     document.getElementById('loginPassword').value = '';
+    resetAppState();
     showPage('notes');
     await loadAllTags();
-    loadNotes();
+    await loadNotes();
     showToast('Vítejte, ' + data.full_name + '! 👋');
   } catch (e) {
     errEl.textContent = 'Chyba spojení se serverem'; errEl.classList.add('visible');
@@ -724,9 +739,10 @@ async function doRegister() {
     ['regUsername','regFullName','regEmail','regPassword','regPassword2'].forEach(id => {
       document.getElementById(id).value = '';
     });
+    resetAppState();
     showPage('notes');
     await loadAllTags();
-    loadNotes();
+    await loadNotes();
     showToast('Registrace úspěšná! Vítejte, ' + data.full_name + ' 🎉');
   } catch (e) {
     errEl.textContent = 'Chyba spojení se serverem'; errEl.classList.add('visible');
@@ -737,9 +753,10 @@ async function doLogout() {
   await fetch('/api/auth/logout', { method: 'POST' });
   currentUser = null;
   updateTopbar();
+  resetAppState();
   showPage('notes');
   await loadAllTags();
-  loadNotes();
+  await loadNotes();
   showToast('Odhlášení proběhlo úspěšně');
 }
 

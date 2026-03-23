@@ -9,6 +9,7 @@ services:
       - notes_data:/data
     environment:
       - DB_PATH=/data/notes.db
+      - SECRET_KEY=zmen-me-na-nejaky-tajny-retezec-minimalne-32-znaku
 
 volumes:
   notes_data:
