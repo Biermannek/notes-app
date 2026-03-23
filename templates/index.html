@@ -175,7 +175,7 @@
     .note-text ul.checklist li::before{content:'☐';position:absolute;left:0;font-size:1rem;line-height:1.55}
     .note-text ul.checklist li.checked{text-decoration:line-through;color:#aaa}
     .note-text ul.checklist li.checked::before{content:'☑';color:#6c63ff}
-    .note-editor ul.checklist li{cursor:text}
+    .note-editor ul.checklist li{cursor:pointer}
     .note-editor ul.checklist li::before{content:'☐';position:absolute;left:0;font-size:1rem;line-height:1.55}
     .note-editor ul.checklist li.checked::before{content:'☑';color:#6c63ff}
     .note-editor ul.checklist li.checked{text-decoration:line-through;color:#aaa}
@@ -802,6 +802,17 @@ function setupWysiwygEditor(el, onSave) {
     e.preventDefault();
     const text = (e.clipboardData || window.clipboardData).getData('text/plain');
     document.execCommand('insertText', false, text);
+  });
+  // Klik na checkbox v editačním módu — detekce podle pozice v levém paddingu
+  el.addEventListener('mousedown', e => {
+    const li = e.target.closest('ul.checklist li');
+    if (!li) return;
+    const rect = li.getBoundingClientRect();
+    const relX = e.clientX - rect.left;
+    if (relX <= 28) { // oblast ikony ☐/☑ (padding-left je 1.6rem ≈ 26px)
+      e.preventDefault(); // neposun kurzor
+      li.classList.toggle('checked');
+    }
   });
 }
 
