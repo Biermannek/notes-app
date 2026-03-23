@@ -21,7 +21,7 @@
     .sidebar-brand:hover{opacity:.8}
     .sidebar-brand h1{font-size:1.2rem;font-weight:700;color:#fff}
     .sidebar-brand p{font-size:.75rem;color:rgba(255,255,255,.45);margin-top:.2rem}
-    .nav{margin-top:1rem;flex:1;overflow-y:auto;overflow-x:hidden}
+    .nav{margin-top:1rem;flex:1;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column}
     .nav-item{display:flex;align-items:center;gap:.75rem;padding:.7rem 1.25rem;color:rgba(255,255,255,.6);font-size:.92rem;font-weight:500;cursor:pointer;border-left:3px solid transparent;transition:all .15s;user-select:none}
     .nav-item:hover{color:#fff;background:rgba(255,255,255,.05)}
     .nav-item.active{color:#fff;border-left-color:#6c63ff;background:rgba(108,99,255,.15)}
@@ -270,16 +270,28 @@
     .share-actions{display:flex;gap:.4rem;margin-top:.65rem}
     .note-shared-banner{display:flex;align-items:center;gap:.4rem;font-size:.78rem;color:#7c3aed;font-weight:600;margin-bottom:.45rem;padding:.3rem .55rem;background:#f5f3ff;border-radius:6px}
 
+    /* ── Hamburger button ── */
+    .hamburger-btn{display:none;background:transparent;border:none;color:rgba(255,255,255,.85);font-size:1.5rem;cursor:pointer;padding:.35rem .85rem;line-height:1;border-radius:6px;transition:background .15s;flex-shrink:0;align-self:stretch;align-items:center}
+    .hamburger-btn:hover{background:rgba(255,255,255,.1)}
+
+    /* ── Mobile nav overlay ── */
+    .nav-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:150}
+    .nav-overlay.visible{display:block}
+
     /* ── Responsive ── */
     @media(max-width:640px){
       body{flex-direction:column}
-      .sidebar{width:100%;min-height:auto;height:auto;position:static;flex-direction:row;padding:0;align-items:center}
-      .sidebar-brand{padding:.75rem 1rem;border-bottom:none;border-right:1px solid rgba(255,255,255,.08)}
+      .sidebar{width:100%;min-height:auto;height:auto;position:sticky;top:0;z-index:200;flex-direction:row;padding:0;align-items:stretch;overflow:visible}
+      .sidebar-brand{padding:.75rem 1rem;border-bottom:none;flex:1;display:flex;flex-direction:column;justify-content:center}
       .sidebar-brand p{display:none}
-      .nav{display:flex;flex-direction:row;margin-top:0}
-      .nav-item{border-left:none;border-bottom:3px solid transparent;padding:.75rem 1rem}
-      .nav-item.active{border-left-color:transparent;border-bottom-color:#6c63ff}
-      .nav-sub{display:none}
+      .hamburger-btn{display:flex;align-items:center}
+      .nav{display:none;position:absolute;top:100%;left:0;right:0;background:#1a1a2e;flex-direction:column;margin-top:0;padding:.5rem 0;box-shadow:0 8px 24px rgba(0,0,0,.35);border-top:1px solid rgba(255,255,255,.1);z-index:201;max-height:calc(100vh - 54px);overflow-y:auto}
+      .sidebar.open .nav{display:flex}
+      .nav-item{border-left:3px solid transparent;border-bottom:none;padding:.85rem 1.25rem;font-size:1rem}
+      .nav-item.active{border-left-color:#6c63ff;border-bottom-color:transparent;background:rgba(108,99,255,.15)}
+      .nav-sub{display:block}
+      .sidebar-footer{margin-top:0;border-top:1px solid rgba(255,255,255,.08);padding:.6rem 1.25rem;font-size:.72rem;color:rgba(255,255,255,.3)}
+      .topbar{padding:.3rem 0 .4rem}
       .main{padding:1rem}
     }
   </style>
@@ -287,18 +299,20 @@
 <body>
 
 <!-- Sidebar -->
-<nav class="sidebar">
+<nav class="sidebar" id="sidebarNav">
   <div class="sidebar-brand" onclick="goHome()" title="Zpět na hlavní přehled">
     <h1>📝 Poznámky</h1>
     <p>Zápisky vždy po ruce</p>
   </div>
+  <button class="hamburger-btn" id="hamburgerBtn" onclick="toggleMobileMenu()" title="Navigační menu" aria-label="Otevřít menu">☰</button>
   <div class="nav">
     <div class="nav-item active" onclick="showPage('notes')" id="nav-notes"><span class="nav-icon">📋</span> Poznámky</div>
     <div class="nav-sub" id="navTagList"></div>
     <div class="nav-item" onclick="showPage('stats')" id="nav-stats"><span class="nav-icon">📊</span> Statistiky</div>
+    <div class="sidebar-footer">Verze: {{ version }}</div>
   </div>
-  <div class="sidebar-footer">Verze: {{ version }}</div>
 </nav>
+<div class="nav-overlay" id="navOverlay" onclick="closeMobileMenu()"></div>
 
 <main class="main">
 
@@ -969,6 +983,25 @@ function showPage(page) {
   const navEl = document.getElementById('nav-' + page);
   if (navEl) navEl.classList.add('active');
   if (page === 'stats') { loadAllTags().then(buildTagStatFilter); loadDailyStats(); }
+  closeMobileMenu();
+}
+function toggleMobileMenu() {
+  const sidebar = document.getElementById('sidebarNav');
+  const overlay = document.getElementById('navOverlay');
+  const btn     = document.getElementById('hamburgerBtn');
+  const isOpen  = sidebar.classList.contains('open');
+  sidebar.classList.toggle('open', !isOpen);
+  overlay.classList.toggle('visible', !isOpen);
+  btn.textContent = isOpen ? '☰' : '✕';
+}
+function closeMobileMenu() {
+  const sidebar = document.getElementById('sidebarNav');
+  const overlay = document.getElementById('navOverlay');
+  if (!sidebar || !overlay) return;
+  sidebar.classList.remove('open');
+  overlay.classList.remove('visible');
+  const btn = document.getElementById('hamburgerBtn');
+  if (btn) btn.textContent = '☰';
 }
 function showStatsPanel(panel) {
   document.querySelectorAll('.stats-panel').forEach(p => p.classList.remove('active'));
