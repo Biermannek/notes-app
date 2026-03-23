@@ -168,6 +168,18 @@
     .fmt-btn{padding:.18rem .52rem;border:1.5px solid #e0e0e0;border-radius:6px;background:#fff;color:#444;font-size:.85rem;cursor:pointer;line-height:1.4;transition:background .15s,border-color .15s;font-family:Georgia,serif}
     .fmt-btn:hover{background:#f0f2f5;border-color:#6c63ff;color:#6c63ff}
 
+    /* ── Checklist ── */
+    .note-text ul.checklist,.note-editor ul.checklist{list-style:none;padding-left:.25rem}
+    .note-text ul.checklist li,.note-editor ul.checklist li{padding-left:1.6rem;position:relative}
+    .note-text ul.checklist li{cursor:pointer;user-select:none}
+    .note-text ul.checklist li::before{content:'☐';position:absolute;left:0;font-size:1rem;line-height:1.55}
+    .note-text ul.checklist li.checked{text-decoration:line-through;color:#aaa}
+    .note-text ul.checklist li.checked::before{content:'☑';color:#6c63ff}
+    .note-editor ul.checklist li{cursor:text}
+    .note-editor ul.checklist li::before{content:'☐';position:absolute;left:0;font-size:1rem;line-height:1.55}
+    .note-editor ul.checklist li.checked::before{content:'☑';color:#6c63ff}
+    .note-editor ul.checklist li.checked{text-decoration:line-through;color:#aaa}
+
     /* ── Stats ── */
     .stats-nav{display:flex;gap:.5rem;margin-bottom:1.5rem;border-bottom:2px solid #e0e0e0;padding-bottom:0}
     .stats-nav-item{padding:.6rem 1rem;font-size:.92rem;font-weight:600;color:#888;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s}
@@ -329,11 +341,11 @@
 
 <!-- Sidebar -->
 <nav class="sidebar" id="sidebarNav">
+  <button class="hamburger-btn" id="hamburgerBtn" onclick="toggleMobileMenu()" title="Navigační menu" aria-label="Otevřít menu">☰</button>
   <div class="sidebar-brand" onclick="goHome()" title="Zpět na hlavní přehled">
     <h1>📝 Poznámky</h1>
     <p>Zápisky vždy po ruce</p>
   </div>
-  <button class="hamburger-btn" id="hamburgerBtn" onclick="toggleMobileMenu()" title="Navigační menu" aria-label="Otevřít menu">☰</button>
   <div class="nav">
     <div class="nav-item active" onclick="goHome()" id="nav-notes"><span class="nav-icon">📋</span> Poznámky</div>
     <div class="nav-sub" id="navTagList"></div>
@@ -396,6 +408,7 @@
         <button class="fmt-btn" title="Přeškrtnuté" onmousedown="event.preventDefault();fmtNew('strikeThrough','~~','~~')"><s>S</s></button>
         <button class="fmt-btn" title="Odrážkový seznam" onmousedown="event.preventDefault();fmtNew('insertUnorderedList','','')">•≡</button>
         <button class="fmt-btn" title="Číslovaný seznam" onmousedown="event.preventDefault();fmtNew('insertOrderedList','','')">1≡</button>
+        <button class="fmt-btn" title="Zaškrtávací seznam" onmousedown="event.preventDefault();fmtNewChecklist()">☑≡</button>
         <div class="editor-mode-toggle">
           <button class="mode-btn active" data-mode="wysiwyg" onclick="setEditorMode('wysiwyg')">WYSIWYG</button>
           <button class="mode-btn" data-mode="md" onclick="setEditorMode('md')">MD</button>
@@ -734,18 +747,28 @@ function handleSpaceAutoList(e, editorEl) {
   const node = range.startContainer;
   if (node.nodeType !== Node.TEXT_NODE) return;
   const textBefore = node.textContent.substring(0, range.startOffset);
-  if (textBefore !== '-') return;
+  if (textBefore !== '-' && textBefore !== '[]') return;
   // Zkontroluj, že jsme na začátku řádku (žádný předchozí sourozenec s obsahem)
   let prev = node.previousSibling;
   while (prev && prev.nodeType === Node.TEXT_NODE && !prev.textContent.trim()) prev = prev.previousSibling;
   if (prev && prev.nodeName !== 'BR') return;
   e.preventDefault();
+  const charsToDelete = textBefore.length;
   const delRange = document.createRange();
-  delRange.setStart(node, range.startOffset - 1);
+  delRange.setStart(node, range.startOffset - charsToDelete);
   delRange.setEnd(node, range.startOffset);
   sel.removeAllRanges(); sel.addRange(delRange);
   document.execCommand('delete');
   document.execCommand('insertUnorderedList');
+  if (textBefore === '[]') {
+    // Přidej třídu checklist nové UL
+    const newSel = window.getSelection();
+    if (newSel.rangeCount) {
+      let cur = newSel.getRangeAt(0).startContainer;
+      while (cur && cur.nodeName !== 'UL') cur = cur.parentNode;
+      if (cur) cur.classList.add('checklist');
+    }
+  }
 }
 
 function setupWysiwygEditor(el, onSave) {
@@ -1538,6 +1561,7 @@ async function loadNotes() {
           <button class="fmt-btn" title="Přeškrtnuté" onmousedown="event.preventDefault();fmtEdit(${n.id},'strikeThrough','~~','~~')"><s>S</s></button>
           <button class="fmt-btn" title="Odrážkový seznam" onmousedown="event.preventDefault();fmtEdit(${n.id},'insertUnorderedList','','')">•≡</button>
           <button class="fmt-btn" title="Číslovaný seznam" onmousedown="event.preventDefault();fmtEdit(${n.id},'insertOrderedList','','')">1≡</button>
+          <button class="fmt-btn" title="Zaškrtávací seznam" onmousedown="event.preventDefault();fmtEditChecklist(${n.id})">☑≡</button>
         </div>
         <div id="editWysiwyg-${n.id}" class="note-editor" contenteditable="true" data-placeholder="Uprav poznámku..." style="display:none"></div>
         <textarea id="edit-${n.id}" style="display:none">${esc(n.text)}</textarea>
@@ -1907,6 +1931,26 @@ function fmtEdit(id, cmd, open, close) {
   }
 }
 
+function insertChecklist(editorEl) {
+  editorEl.focus();
+  document.execCommand('insertUnorderedList');
+  const sel = window.getSelection();
+  if (sel.rangeCount) {
+    let cur = sel.getRangeAt(0).startContainer;
+    while (cur && cur !== editorEl && cur.nodeName !== 'UL') cur = cur.parentNode;
+    if (cur && cur.nodeName === 'UL') cur.classList.add('checklist');
+  }
+}
+function fmtNewChecklist() {
+  if (editorMode === 'wysiwyg') insertChecklist(document.getElementById('noteInput'));
+}
+function fmtEditChecklist(id) {
+  if (editorMode === 'wysiwyg') {
+    const ed = document.getElementById(`editWysiwyg-${id}`);
+    if (ed) insertChecklist(ed);
+  }
+}
+
 function setEditorMode(mode) {
   if (editorMode === mode) return;
   // Převeď obsah nového editoru
@@ -1977,6 +2021,26 @@ document.getElementById('loginUsername').addEventListener('keydown', e => {
 });
 document.getElementById('regPassword2').addEventListener('keydown', e => {
   if (e.key === 'Enter') doRegister();
+});
+
+// Klik na zaškrtávací položku v read-mode
+document.getElementById('notesList').addEventListener('click', async function(e) {
+  const li = e.target.closest('.note-text ul.checklist li');
+  if (!li) return;
+  const noteEl = li.closest('[id^="note-"]');
+  if (!noteEl || noteEl.classList.contains('editing')) return;
+  e.stopPropagation();
+  const noteId = parseInt(noteEl.id.replace('note-', ''));
+  li.classList.toggle('checked');
+  const newHtml = noteEl.querySelector('.note-text').innerHTML;
+  noteEl.dataset.text = newHtml;
+  // Aktualizuj textarea (pro případ přepnutí do edit módu)
+  const ta = document.getElementById(`edit-${noteId}`);
+  if (ta) ta.value = newHtml;
+  await fetch(`/api/notes/${noteId}`, {
+    method: 'PUT', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({text: newHtml})
+  });
 });
 
 // Load current user first, then notes
