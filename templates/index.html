@@ -230,6 +230,19 @@
     .auth-link a{color:#6c63ff;cursor:pointer;font-weight:600;text-decoration:none}
     .auth-link a:hover{text-decoration:underline}
 
+    /* ── Visibility / public note ── */
+    .btn-visibility{background:transparent;padding:.2rem .5rem;border:1.5px solid #e0e0e0;border-radius:6px;cursor:pointer;line-height:1;flex-shrink:0;font-size:.78rem;font-weight:600;color:#888;white-space:nowrap;transition:all .15s}
+    .btn-visibility:hover{border-color:#6c63ff;color:#6c63ff;background:#f5f4ff}
+    .btn-visibility.public{border-color:#ef4444;color:#ef4444;background:#fff5f5}
+    .note-item.own-public{border-left-color:#ef4444}
+    .note-item.own-public.pinned{border-left-color:#ef4444}
+    .note-item.public-other{border-left-color:#3b82f6;background:#f8fbff}
+    .note-public-banner{display:flex;align-items:center;gap:.4rem;font-size:.78rem;color:#3b82f6;font-weight:600;margin-bottom:.45rem;padding:.3rem .55rem;background:#eff6ff;border-radius:6px}
+    .new-note-privacy{display:none;align-items:center;gap:.5rem;margin-top:.6rem;font-size:.82rem;color:#666}
+    .btn-new-privacy{padding:.25rem .65rem;border:1.5px solid #e0e0e0;border-radius:8px;background:#fff;color:#888;font-size:.78rem;font-weight:600;cursor:pointer;transition:all .15s}
+    .btn-new-privacy:hover{border-color:#6c63ff;color:#6c63ff}
+    .btn-new-privacy.public{border-color:#ef4444;color:#ef4444;background:#fff5f5}
+
     /* ── Responsive ── */
     @media(max-width:640px){
       body{flex-direction:column}
@@ -300,7 +313,13 @@
           <div class="tag-dropdown" id="newTagDropdown"></div>
         </div>
       </div>
-      <button class="btn btn-primary" id="saveBtn" onclick="saveNote()">＋ Uložit poznámku</button>
+      <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;margin-top:.85rem">
+        <button class="btn btn-primary" id="saveBtn" onclick="saveNote()" style="margin-top:0">＋ Uložit poznámku</button>
+        <div class="new-note-privacy" id="newNotePrivacyRow">
+          <span>Viditelnost:</span>
+          <button id="btnNewPrivacy" class="btn-new-privacy" onclick="toggleNewNotePrivacy()">🔒 Soukromá</button>
+        </div>
+      </div>
     </div>
 
     <!-- Search bar -->
@@ -462,6 +481,7 @@
 <script>
 // ── State ──────────────────────────────────────────────────────────────────
 let currentUser     = null;
+let newNoteIsPublic = false;
 let editingNoteId   = null;
 let editorMode      = 'wysiwyg';   // 'wysiwyg' | 'md'
 let showArchived    = false;
@@ -654,14 +674,21 @@ function updateTopbar() {
   const loginBtn = document.getElementById('topbarLoginBtn');
   const nameEl   = document.getElementById('topbarName');
   const initEl   = document.getElementById('topbarInitials');
+  const privRow  = document.getElementById('newNotePrivacyRow');
   if (currentUser) {
     nameEl.textContent   = currentUser.full_name;
     initEl.textContent   = currentUser.full_name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
     userDiv.style.display  = 'flex';
     loginBtn.style.display = 'none';
+    if (privRow) privRow.style.display = 'flex';
   } else {
     userDiv.style.display  = 'none';
     loginBtn.style.display = 'inline-flex';
+    if (privRow) privRow.style.display = 'none';
+    // Reset privacy state on logout
+    newNoteIsPublic = false;
+    const privBtn = document.getElementById('btnNewPrivacy');
+    if (privBtn) { privBtn.textContent = '🔒 Soukromá'; privBtn.classList.remove('public'); }
   }
 }
 
@@ -758,6 +785,28 @@ async function doLogout() {
   await loadAllTags();
   await loadNotes();
   showToast('Odhlášení proběhlo úspěšně');
+}
+
+// ── Note visibility ────────────────────────────────────────────────────────
+function toggleNewNotePrivacy() {
+  newNoteIsPublic = !newNoteIsPublic;
+  const btn = document.getElementById('btnNewPrivacy');
+  if (newNoteIsPublic) {
+    btn.textContent = '🌐 Veřejná ⚠️';
+    btn.classList.add('public');
+  } else {
+    btn.textContent = '🔒 Soukromá';
+    btn.classList.remove('public');
+  }
+}
+
+async function toggleVisibility(id) {
+  const res = await fetch(`/api/notes/${id}/visibility`, { method: 'PUT' });
+  if (res.ok) {
+    const note = await res.json();
+    await loadNotes();
+    showToast(note.is_public ? '🌐 Poznámka zveřejněna' : '🔒 Poznámka je nyní soukromá');
+  }
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────
@@ -968,13 +1017,36 @@ async function loadNotes() {
       return `<span class="tag-chip" style="background:${s.bg};color:${s.color};cursor:pointer"
                     onclick="addFilterTag('${t}')" title="Filtrovat dle #${t}">#${t}</span>`;
     }).join('');
+    // Ownership: logged-in → own note if user_id matches; not logged-in → legacy note (user_id null)
+    const isOwnNote  = currentUser ? n.user_id === currentUser.id : n.user_id === null;
+    const isPublic   = n.is_public === 1;
+    // CSS classes
+    const noteClass  = ['note-item',
+      (n.is_pinned && !showArchived) ? 'pinned' : '',
+      showArchived ? 'archived' : '',
+      (isOwnNote && isPublic && !showArchived) ? 'own-public' : '',
+      (!isOwnNote && isPublic) ? 'public-other' : '',
+    ].filter(Boolean).join(' ');
+    // Banner for other users' public notes
+    const publicBanner = (!isOwnNote && isPublic)
+      ? `<div class="note-public-banner">🌐 Veřejná poznámka · Zveřejnil: ${escAttr(n.owner_name || 'Neznámý uživatel')}</div>`
+      : '';
+    // Visibility toggle for own notes (not in archive)
+    const visBtn = (isOwnNote && !showArchived)
+      ? `<button class="btn-visibility${isPublic ? ' public' : ''}" onclick="toggleVisibility(${n.id})" title="${isPublic ? 'Skrýt (učinit soukromou)' : 'Zveřejnit'}">${isPublic ? '🌐' : '🔒'}</button>`
+      : '';
+    // Action buttons
     const actions = showArchived
       ? `<button class="btn btn-edit" onclick="startEdit(${n.id})">✏️ Upravit</button>
          <button class="btn-restore" onclick="restoreNote(${n.id})" title="Obnovit poznámku">↩️ Obnovit</button>`
-      : `<button class="btn-pin${n.is_pinned ? ' active' : ''}" onclick="togglePin(${n.id})" title="${n.is_pinned ? 'Odepnout' : 'Připnout'}">📌</button>
-         <button class="btn btn-edit" onclick="startEdit(${n.id})">✏️ Upravit</button>
-         <button class="btn-archive" onclick="archiveNote(${n.id})" title="Archivovat">🗑</button>`;
-    return `<div class="note-item${n.is_pinned && !showArchived ? ' pinned' : ''}${showArchived ? ' archived' : ''}" id="note-${n.id}" data-text="${escAttr(n.text)}">
+      : (isOwnNote
+          ? `<button class="btn-pin${n.is_pinned ? ' active' : ''}" onclick="togglePin(${n.id})" title="${n.is_pinned ? 'Odepnout' : 'Připnout'}">📌</button>
+             <button class="btn btn-edit" onclick="startEdit(${n.id})">✏️ Upravit</button>
+             <button class="btn-archive" onclick="archiveNote(${n.id})" title="Archivovat">🗑</button>
+             ${visBtn}`
+          : '');
+    return `<div class="${noteClass}" id="note-${n.id}" data-text="${escAttr(n.text)}">
+      ${publicBanner}
       <div class="note-header">
         <div class="note-dates">
           <div class="note-meta">🕐 Vytvořeno: ${fmt(n.created_at)}</div>
@@ -1017,8 +1089,10 @@ async function loadNotes() {
   if (hasBoth) html += '<div class="notes-section-sep" style="margin-top:.5rem">Ostatní poznámky</div>';
   html += unpinned.map(noteHtml).join('');
   list.innerHTML = html;
-  // Inicializuj tag komponenty a event handlery pro editaci
+  // Inicializuj tag komponenty a event handlery pro editaci (jen pro vlastní poznámky)
   notes.forEach(n => {
+    const isOwnNote = currentUser ? n.user_id === currentUser.id : n.user_id === null;
+    if (!isOwnNote) return; // cizí veřejné poznámky nelze editovat
     makeTagInputComponent(`editTagWrap${n.id}`,`editTagChips${n.id}`,`editTagInput${n.id}`,`editTagDropdown${n.id}`);
     window[`setTags_editTagInput${n.id}`](n.tags || []);
     // Textarea: Enter = uložit
@@ -1079,12 +1153,16 @@ async function saveNote() {
   try {
     const res = await fetch('/api/notes', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ text, tags })
+      body: JSON.stringify({ text, tags, is_public: newNoteIsPublic })
     });
     if (res.ok) {
       if (editorMode === 'wysiwyg') document.getElementById('noteInput').innerHTML = '';
       else document.getElementById('noteInputMd').value = '';
       window['clearTags_newTagInput']();
+      // Reset privacy toggle
+      newNoteIsPublic = false;
+      const privBtn = document.getElementById('btnNewPrivacy');
+      if (privBtn) { privBtn.textContent = '🔒 Soukromá'; privBtn.classList.remove('public'); }
       await Promise.all([loadNotes(), loadAllTags()]);
       showToast('✓ Poznámka uložena');
     }

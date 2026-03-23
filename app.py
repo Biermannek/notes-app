@@ -35,7 +35,8 @@ def init_db():
         created_at  DATETIME DEFAULT (datetime('now', 'localtime')),
         updated_at  DATETIME,
         is_pinned   INTEGER NOT NULL DEFAULT 0,
-        is_archived INTEGER NOT NULL DEFAULT 0)''')
+        is_archived INTEGER NOT NULL DEFAULT 0,
+        is_public   INTEGER NOT NULL DEFAULT 0)''')
     conn.execute('''CREATE TABLE IF NOT EXISTS tags (
         id   INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT UNIQUE NOT NULL)''')
@@ -51,6 +52,7 @@ def init_db():
         ('is_pinned',   'INTEGER NOT NULL DEFAULT 0'),
         ('is_archived', 'INTEGER NOT NULL DEFAULT 0'),
         ('user_id',     'INTEGER REFERENCES users(id)'),
+        ('is_public',   'INTEGER NOT NULL DEFAULT 0'),
     ]:
         try:
             conn.execute(f'ALTER TABLE notes ADD COLUMN {col} {definition}')
@@ -69,12 +71,20 @@ def current_user_id():
     return session.get('user_id')
 
 
-def user_filter():
-    """Returns (sql_condition, params) for filtering notes by current user."""
+def user_filter(strict=False):
+    """Returns (sql_condition, params) for filtering notes by current user.
+    strict=True: only own notes (used for archive view).
+    strict=False: own notes + public notes from all users.
+    """
     uid = current_user_id()
-    if uid:
-        return ' AND n.user_id = ?', [uid]
-    return ' AND n.user_id IS NULL', []
+    if strict:
+        if uid:
+            return ' AND n.user_id = ?', [uid]
+        return ' AND n.user_id IS NULL', []
+    else:
+        if uid:
+            return ' AND (n.user_id = ? OR n.is_public = 1)', [uid]
+        return ' AND (n.user_id IS NULL OR n.is_public = 1)', []
 
 
 def check_note_access(conn, note_id):
@@ -115,7 +125,9 @@ def get_tags_for_notes(conn, note_ids):
 
 
 def note_select():
-    return 'SELECT n.id, n.text, n.created_at, n.updated_at, n.is_pinned, n.is_archived FROM notes n'
+    return ('SELECT n.id, n.text, n.created_at, n.updated_at, n.is_pinned, n.is_archived, '
+            'n.is_public, n.user_id, u.full_name AS owner_name '
+            'FROM notes n LEFT JOIN users u ON n.user_id = u.id')
 
 
 def parse_search(query):
@@ -267,9 +279,9 @@ def get_tags():
     q   = request.args.get('q', '').strip().lower()
     uid = current_user_id()
     if uid:
-        notes_cond, notes_params = 'n.user_id = ?', [uid]
+        notes_cond, notes_params = '(n.user_id = ? OR n.is_public = 1)', [uid]
     else:
-        notes_cond, notes_params = 'n.user_id IS NULL', []
+        notes_cond, notes_params = '(n.user_id IS NULL OR n.is_public = 1)', []
 
     conn = get_db()
     if q:
@@ -316,7 +328,7 @@ def get_notes():
     search_terms  = parse_search(search_raw) if search_raw else []
     sel           = note_select()
 
-    user_cond, user_params = user_filter()
+    user_cond, user_params = user_filter(strict=show_archived)
     base_cond   = f'{user_cond} AND n.is_archived = {arch_val}'
     base_params = user_params[:]
     if search_terms:
@@ -361,10 +373,12 @@ def add_note():
     data = request.get_json()
     if not data or not data.get('text', '').strip():
         return jsonify({'error': 'Text nesmí být prázdný'}), 400
-    uid  = current_user_id()
+    uid       = current_user_id()
+    is_public = 1 if (uid and data.get('is_public')) else 0
     conn = get_db()
     cursor = conn.execute(
-        'INSERT INTO notes (text, user_id) VALUES (?, ?)', (data['text'].strip(), uid)
+        'INSERT INTO notes (text, user_id, is_public) VALUES (?, ?, ?)',
+        (data['text'].strip(), uid, is_public)
     )
     note_id = cursor.lastrowid
     save_tags_for_note(conn, note_id, data.get('tags', []))
@@ -427,6 +441,24 @@ def toggle_archive(note_id):
         return jsonify({'error': 'Přístup odepřen'}), 403
     res = conn.execute(
         'UPDATE notes SET is_archived = 1 - is_archived WHERE id = ?', (note_id,)
+    )
+    if res.rowcount == 0:
+        conn.close()
+        return jsonify({'error': 'Poznámka nenalezena'}), 404
+    conn.commit()
+    row = conn.execute(f'{note_select()} WHERE n.id = ?', (note_id,)).fetchone()
+    conn.close()
+    return jsonify(dict(row))
+
+
+@app.route('/api/notes/<int:note_id>/visibility', methods=['PUT'])
+def toggle_visibility(note_id):
+    conn = get_db()
+    if not check_note_access(conn, note_id):
+        conn.close()
+        return jsonify({'error': 'Přístup odepřen'}), 403
+    res = conn.execute(
+        'UPDATE notes SET is_public = 1 - is_public WHERE id = ?', (note_id,)
     )
     if res.rowcount == 0:
         conn.close()
