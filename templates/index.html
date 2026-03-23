@@ -335,7 +335,7 @@
   </div>
   <button class="hamburger-btn" id="hamburgerBtn" onclick="toggleMobileMenu()" title="Navigační menu" aria-label="Otevřít menu">☰</button>
   <div class="nav">
-    <div class="nav-item active" onclick="showPage('notes')" id="nav-notes"><span class="nav-icon">📋</span> Poznámky</div>
+    <div class="nav-item active" onclick="goHome()" id="nav-notes"><span class="nav-icon">📋</span> Poznámky</div>
     <div class="nav-sub" id="navTagList"></div>
     <div class="nav-item" onclick="showPage('stats')" id="nav-stats"><span class="nav-icon">📊</span> Statistiky</div>
     <div class="nav-item" onclick="showPage('settings')" id="nav-settings" style="display:none"><span class="nav-icon">⚙️</span> Nastavení</div>
@@ -1136,6 +1136,8 @@ function _doShowPage(page) {
   if (navEl) navEl.classList.add('active');
   if (page === 'stats') { loadAllTags().then(buildTagStatFilter); loadDailyStats(); }
   if (page === 'settings') loadSettings();
+  if (page === 'login') setTimeout(() => { const el = document.getElementById('loginUsername'); if (el) el.focus(); }, 50);
+  if (page === 'register') setTimeout(() => { const el = document.getElementById('regUsername'); if (el) el.focus(); }, 50);
   closeMobileMenu();
 }
 function showPage(page) {

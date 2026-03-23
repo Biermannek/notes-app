@@ -333,7 +333,9 @@ def get_tags():
     q   = request.args.get('q', '').strip().lower()
     uid = current_user_id()
     if uid:
-        notes_cond, notes_params = '(n.user_id = ? OR n.is_public = 1)', [uid]
+        notes_cond  = ('(n.user_id = ? OR n.is_public = 1 OR '
+                       'EXISTS (SELECT 1 FROM note_shares ns WHERE ns.note_id = n.id AND ns.user_id = ?))')
+        notes_params = [uid, uid]
     else:
         notes_cond, notes_params = '(n.user_id IS NULL OR n.is_public = 1)', []
 
