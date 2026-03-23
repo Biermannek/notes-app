@@ -337,7 +337,7 @@
   <div class="nav">
     <div class="nav-item active" onclick="goHome()" id="nav-notes"><span class="nav-icon">📋</span> Poznámky</div>
     <div class="nav-sub" id="navTagList"></div>
-    <div class="nav-item" onclick="showPage('stats')" id="nav-stats"><span class="nav-icon">📊</span> Statistiky</div>
+    <div class="nav-item" onclick="showPage('stats')" id="nav-stats" style="display:none"><span class="nav-icon">📊</span> Statistiky</div>
     <div class="nav-item" onclick="showPage('settings')" id="nav-settings" style="display:none"><span class="nav-icon">⚙️</span> Nastavení</div>
     <div class="sidebar-footer">Verze: {{ version }}</div>
   </div>
@@ -360,7 +360,34 @@
   <div class="page active" id="page-notes">
     <h2 class="page-title">Poznámky</h2>
 
-    <div class="card">
+    <!-- Banner pro nepřihlášené uživatele -->
+    <div id="anonBanner" class="card" style="display:none">
+      <div style="margin-bottom:1rem">
+        <div style="font-size:1.1rem;font-weight:700;color:#1a1a2e;margin-bottom:.25rem">🔐 Přihlaste se</div>
+        <div style="font-size:.88rem;color:#777">Pro přidávání a správu poznámek je třeba se přihlásit. Níže jsou zobrazeny veřejné poznámky.</div>
+      </div>
+      <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end">
+        <div style="flex:1;min-width:140px">
+          <div style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.3rem">Uživatelské jméno</div>
+          <input id="inlineLoginUsername" type="text" placeholder="uživatelské jméno" autocomplete="username"
+                 style="width:100%;padding:.65rem .9rem;border:2px solid #e0e0e0;border-radius:10px;font-size:.95rem;font-family:inherit;color:#1a1a2e;transition:border-color .2s;background:#fff;outline:none"
+                 onfocus="this.style.borderColor='#6c63ff'" onblur="this.style.borderColor='#e0e0e0'"
+                 onkeydown="if(event.key==='Enter')doInlineLogin()"/>
+        </div>
+        <div style="flex:1;min-width:140px">
+          <div style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.3rem">Heslo</div>
+          <input id="inlineLoginPassword" type="password" placeholder="heslo" autocomplete="current-password"
+                 style="width:100%;padding:.65rem .9rem;border:2px solid #e0e0e0;border-radius:10px;font-size:.95rem;font-family:inherit;color:#1a1a2e;transition:border-color .2s;background:#fff;outline:none"
+                 onfocus="this.style.borderColor='#6c63ff'" onblur="this.style.borderColor='#e0e0e0'"
+                 onkeydown="if(event.key==='Enter')doInlineLogin()"/>
+        </div>
+        <button class="btn btn-primary" style="margin-top:0;white-space:nowrap;flex-shrink:0" onclick="doInlineLogin()">Přihlásit se</button>
+      </div>
+      <div class="auth-error" id="inlineLoginError" style="margin-top:.75rem;margin-bottom:0"></div>
+      <div style="font-size:.82rem;color:#999;margin-top:.65rem">Nemáte účet? <a style="color:#6c63ff;cursor:pointer;font-weight:600" onclick="showPage('register')">Zaregistrujte se</a></div>
+    </div>
+
+    <div id="noteFormCard" class="card" style="display:none">
       <label for="noteInput">Co si chceš poznamenat?</label>
       <div class="format-toolbar">
         <button class="fmt-btn" title="Tučně" onmousedown="event.preventDefault();fmtNew('bold','**','**')"><b>B</b></button>
@@ -856,25 +883,37 @@ function discardSettings() {
 
 // ── Auth ──────────────────────────────────────────────────────────────────
 function updateTopbar() {
-  const userDiv  = document.getElementById('topbarUser');
-  const loginBtn = document.getElementById('topbarLoginBtn');
-  const nameEl   = document.getElementById('topbarName');
-  const initEl   = document.getElementById('topbarInitials');
-  const privRow  = document.getElementById('newNotePrivacyRow');
+  const userDiv     = document.getElementById('topbarUser');
+  const loginBtn    = document.getElementById('topbarLoginBtn');
+  const nameEl      = document.getElementById('topbarName');
+  const initEl      = document.getElementById('topbarInitials');
+  const privRow     = document.getElementById('newNotePrivacyRow');
   const settingsNav = document.getElementById('nav-settings');
+  const statsNav    = document.getElementById('nav-stats');
+  const anonBanner  = document.getElementById('anonBanner');
+  const noteFormCard = document.getElementById('noteFormCard');
+  const archiveBtn  = document.getElementById('btnArchiveToggle');
   if (currentUser) {
-    nameEl.textContent   = currentUser.full_name;
-    initEl.textContent   = currentUser.full_name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-    userDiv.style.display  = 'flex';
-    loginBtn.style.display = 'none';
-    if (privRow) privRow.style.display = 'flex';
-    if (settingsNav) settingsNav.style.display = 'flex';
+    nameEl.textContent  = currentUser.full_name;
+    initEl.textContent  = currentUser.full_name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+    userDiv.style.display   = 'flex';
+    loginBtn.style.display  = 'none';
+    if (privRow)       privRow.style.display      = 'flex';
+    if (settingsNav)   settingsNav.style.display   = 'flex';
+    if (statsNav)      statsNav.style.display      = 'flex';
+    if (anonBanner)    anonBanner.style.display    = 'none';
+    if (noteFormCard)  noteFormCard.style.display  = 'block';
+    if (archiveBtn)    archiveBtn.style.display    = '';
   } else {
-    userDiv.style.display  = 'none';
-    loginBtn.style.display = 'inline-flex';
-    if (privRow) privRow.style.display = 'none';
-    if (settingsNav) settingsNav.style.display = 'none';
-    // Reset privacy state on logout
+    userDiv.style.display   = 'none';
+    loginBtn.style.display  = 'none';   // přihlášení je nyní inline v banneru
+    if (privRow)       privRow.style.display      = 'none';
+    if (settingsNav)   settingsNav.style.display   = 'none';
+    if (statsNav)      statsNav.style.display      = 'none';
+    if (anonBanner)    anonBanner.style.display    = 'block';
+    if (noteFormCard)  noteFormCard.style.display  = 'none';
+    if (archiveBtn)    archiveBtn.style.display    = 'none';
+    // Reset privacy state
     newNoteIsPublic = false;
     const privBtn = document.getElementById('btnNewPrivacy');
     if (privBtn) { privBtn.textContent = '🔒 Soukromá'; privBtn.classList.remove('public'); }
@@ -907,13 +946,10 @@ function resetAppState() {
   if (title) title.textContent = 'Uložené poznámky';
 }
 
-async function doLogin() {
-  const username = document.getElementById('loginUsername').value.trim();
-  const password = document.getElementById('loginPassword').value;
-  const errEl    = document.getElementById('loginError');
+async function _performLogin(username, password, errEl) {
   errEl.classList.remove('visible');
   if (!username || !password) {
-    errEl.textContent = 'Vyplňte všechna pole'; errEl.classList.add('visible'); return;
+    errEl.textContent = 'Vyplňte všechna pole'; errEl.classList.add('visible'); return false;
   }
   try {
     const r    = await fetch('/api/auth/login', {
@@ -921,19 +957,41 @@ async function doLogin() {
       body: JSON.stringify({ username, password })
     });
     const data = await r.json();
-    if (!r.ok) { errEl.textContent = data.error || 'Chyba přihlášení'; errEl.classList.add('visible'); return; }
+    if (!r.ok) { errEl.textContent = data.error || 'Chyba přihlášení'; errEl.classList.add('visible'); return false; }
     currentUser = data;
     updateTopbar();
     await loadSettings();
-    document.getElementById('loginUsername').value = '';
-    document.getElementById('loginPassword').value = '';
     resetAppState();
-    showPage('notes');
+    _doShowPage('notes');
     await loadAllTags();
     await loadNotes();
     showToast('Vítejte, ' + data.full_name + '! 👋');
+    return true;
   } catch (e) {
     errEl.textContent = 'Chyba spojení se serverem'; errEl.classList.add('visible');
+    return false;
+  }
+}
+
+async function doLogin() {
+  const username = document.getElementById('loginUsername').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const errEl    = document.getElementById('loginError');
+  const ok = await _performLogin(username, password, errEl);
+  if (ok) {
+    document.getElementById('loginUsername').value = '';
+    document.getElementById('loginPassword').value = '';
+  }
+}
+
+async function doInlineLogin() {
+  const username = document.getElementById('inlineLoginUsername').value.trim();
+  const password = document.getElementById('inlineLoginPassword').value;
+  const errEl    = document.getElementById('inlineLoginError');
+  const ok = await _performLogin(username, password, errEl);
+  if (ok) {
+    document.getElementById('inlineLoginUsername').value = '';
+    document.getElementById('inlineLoginPassword').value = '';
   }
 }
 
