@@ -243,6 +243,32 @@
     .btn-new-privacy:hover{border-color:#6c63ff;color:#6c63ff}
     .btn-new-privacy.public{border-color:#ef4444;color:#ef4444;background:#fff5f5}
 
+    /* ── Share badge + panel ── */
+    .note-shared-badge{position:relative;display:inline-flex;align-items:center;gap:.28rem;font-size:.73rem;font-weight:700;color:#7c3aed;background:#f5f3ff;padding:.18rem .55rem;border-radius:999px;cursor:default;user-select:none;margin-top:.3rem}
+    .share-tt{visibility:hidden;opacity:0;position:absolute;bottom:calc(100% + 7px);left:50%;transform:translateX(-50%);background:#1a1a2e;color:#fff;font-size:.74rem;font-weight:500;padding:.35rem .7rem;border-radius:8px;white-space:nowrap;z-index:30;pointer-events:none;transition:opacity .15s}
+    .note-shared-badge:hover .share-tt{visibility:visible;opacity:1}
+    .btn-share{background:transparent;font-size:1rem;padding:.2rem .4rem;border:none;border-radius:6px;cursor:pointer;line-height:1;flex-shrink:0;filter:grayscale(.5) opacity(.45);transition:filter .15s,background .15s}
+    .btn-share:hover,.btn-share.active{background:#f5f3ff;filter:none}
+    .share-panel{margin-top:.75rem;padding:.85rem 1rem;background:#faf9ff;border:1.5px solid #ddd6fe;border-radius:10px}
+    .share-panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:.6rem}
+    .share-panel-title{font-size:.88rem;font-weight:700;color:#5b21b6}
+    .btn-close-share{border:none;background:transparent;color:#aaa;cursor:pointer;font-size:.95rem;padding:.1rem .3rem;border-radius:4px;line-height:1}
+    .btn-close-share:hover{color:#f87171}
+    .share-chips-wrap{display:flex;flex-wrap:wrap;gap:.35rem;min-height:1.6rem;margin-bottom:.65rem;align-items:center}
+    .share-chip{display:inline-flex;align-items:center;gap:.3rem;padding:.2rem .6rem;border-radius:999px;font-size:.78rem;font-weight:600;background:#ede9fe;color:#6d28d9;white-space:nowrap}
+    .share-chip .rm{cursor:pointer;opacity:.6;font-size:.85rem;line-height:1}
+    .share-chip .rm:hover{opacity:1}
+    .share-input-wrap{position:relative}
+    .share-input{width:100%;padding:.55rem .8rem;border:1.5px solid #e0e0e0;border-radius:8px;font-size:.88rem;font-family:inherit;color:#1a1a2e;background:#fff;transition:border-color .2s}
+    .share-input:focus{outline:none;border-color:#7c3aed}
+    .share-dropdown{position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid #ddd6fe;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.1);z-index:50;max-height:180px;overflow-y:auto;display:none}
+    .share-dropdown.open{display:block}
+    .share-dd-item{padding:.5rem .85rem;font-size:.86rem;cursor:pointer;color:#333;display:flex;justify-content:space-between;align-items:center}
+    .share-dd-item:hover{background:#f5f3ff}
+    .share-dd-login{font-size:.75rem;color:#aaa}
+    .share-error{font-size:.82rem;color:#ef4444;margin-top:.4rem;min-height:1.1em}
+    .share-actions{display:flex;gap:.4rem;margin-top:.65rem}
+
     /* ── Responsive ── */
     @media(max-width:640px){
       body{flex-direction:column}
@@ -483,6 +509,8 @@
 let currentUser     = null;
 let newNoteIsPublic = false;
 let editingNoteId   = null;
+let sharingNoteId   = null;
+let sharingUsers    = {};   // noteId → [{user_id, username, full_name}]
 let editorMode      = 'wysiwyg';   // 'wysiwyg' | 'md'
 let showArchived    = false;
 let searchQuery     = '';
@@ -809,6 +837,129 @@ async function toggleVisibility(id) {
   }
 }
 
+// ── Note sharing ───────────────────────────────────────────────────────────
+function startShare(id) {
+  // Close another open share panel
+  if (sharingNoteId !== null && sharingNoteId !== id) closeShare(sharingNoteId);
+  sharingNoteId = id;
+  const panel = document.getElementById(`share-panel-${id}`);
+  if (!panel) return;
+  panel.style.display = 'block';
+  // Mark the btn active
+  const btn = document.getElementById(`share-btn-${id}`);
+  if (btn) btn.classList.add('active');
+  // Init from data-shares on the note element
+  const noteEl = document.getElementById(`note-${id}`);
+  const shares = noteEl ? JSON.parse(noteEl.dataset.shares || '[]') : [];
+  sharingUsers[id] = shares.map(s => ({...s}));
+  renderShareChips(id);
+  const inp = document.getElementById(`share-input-${id}`);
+  if (inp) inp.focus();
+}
+
+function closeShare(id) {
+  const panel = document.getElementById(`share-panel-${id}`);
+  if (panel) panel.style.display = 'none';
+  const btn = document.getElementById(`share-btn-${id}`);
+  if (btn) btn.classList.remove('active');
+  const dd = document.getElementById(`share-dropdown-${id}`);
+  if (dd) { dd.classList.remove('open'); dd.innerHTML = ''; }
+  const errEl = document.getElementById(`share-error-${id}`);
+  if (errEl) errEl.textContent = '';
+  if (sharingNoteId === id) sharingNoteId = null;
+}
+
+function renderShareChips(id) {
+  const el = document.getElementById(`share-chips-${id}`);
+  if (!el) return;
+  const users = sharingUsers[id] || [];
+  if (!users.length) {
+    el.innerHTML = '<span style="color:#aaa;font-size:.82rem;font-style:italic">Zatím nesdíleno</span>';
+    return;
+  }
+  el.innerHTML = users.map(u =>
+    `<span class="share-chip">${escAttr(u.full_name)}
+       <span class="rm" onclick="removeShareUser(${id},'${u.username.replace(/'/g,"\\'")}')">×</span>
+     </span>`
+  ).join('');
+}
+
+function removeShareUser(id, username) {
+  sharingUsers[id] = (sharingUsers[id] || []).filter(u => u.username !== username);
+  renderShareChips(id);
+}
+
+function addShareUserToList(id, username, fullName, userId) {
+  if (currentUser && userId === currentUser.id) return; // not self
+  const users = sharingUsers[id] || [];
+  if (users.find(u => u.username === username)) return; // already added
+  users.push({ user_id: userId, username, full_name: fullName });
+  sharingUsers[id] = users;
+  renderShareChips(id);
+  const inp = document.getElementById(`share-input-${id}`);
+  if (inp) inp.value = '';
+  const dd = document.getElementById(`share-dropdown-${id}`);
+  if (dd) { dd.classList.remove('open'); dd.innerHTML = ''; }
+}
+
+async function showShareDropdown(id, q) {
+  const dd = document.getElementById(`share-dropdown-${id}`);
+  if (!dd) return;
+  if (!q.trim()) { dd.classList.remove('open'); return; }
+  const res  = await fetch(`/api/users/search?q=${encodeURIComponent(q)}`);
+  const data = await res.json();
+  const already = (sharingUsers[id] || []).map(u => u.username);
+  const filtered = data.filter(u => !already.includes(u.username));
+  if (!filtered.length) { dd.classList.remove('open'); return; }
+  dd.innerHTML = filtered.map(u =>
+    `<div class="share-dd-item"
+          onmousedown="event.preventDefault()"
+          onclick="addShareUserToList(${id},'${u.username.replace(/'/g,"\\'")}','${u.full_name.replace(/'/g,"\\'")}',${u.user_id || 0})">
+       <span>${escAttr(u.full_name)}</span>
+       <span class="share-dd-login">@${escAttr(u.username)}</span>
+     </div>`
+  ).join('');
+  dd.classList.add('open');
+}
+
+function setupShareInput(id) {
+  const inp = document.getElementById(`share-input-${id}`);
+  const dd  = document.getElementById(`share-dropdown-${id}`);
+  if (!inp) return;
+  inp.addEventListener('input',  () => showShareDropdown(id, inp.value));
+  inp.addEventListener('blur',   () => setTimeout(() => { if (dd) dd.classList.remove('open'); }, 150));
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { if (dd) dd.classList.remove('open'); inp.blur(); }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const focused = dd ? dd.querySelector('.share-dd-item:hover') : null;
+      if (focused) focused.click();
+    }
+  });
+}
+
+async function saveShares(id) {
+  const errEl    = document.getElementById(`share-error-${id}`);
+  if (errEl) errEl.textContent = '';
+  const usernames = (sharingUsers[id] || []).map(u => u.username);
+  try {
+    const res  = await fetch(`/api/notes/${id}/shares`, {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ usernames })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      if (errEl) errEl.textContent = data.error || 'Chyba při ukládání';
+      return;
+    }
+    closeShare(id);
+    await loadNotes();
+    showToast('✓ Sdílení uloženo');
+  } catch (e) {
+    if (errEl) errEl.textContent = 'Chyba spojení se serverem';
+  }
+}
+
 // ── Navigation ────────────────────────────────────────────────────────────
 function showPage(page) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -1017,23 +1168,36 @@ async function loadNotes() {
       return `<span class="tag-chip" style="background:${s.bg};color:${s.color};cursor:pointer"
                     onclick="addFilterTag('${t}')" title="Filtrovat dle #${t}">#${t}</span>`;
     }).join('');
-    // Ownership: logged-in → own note if user_id matches; not logged-in → legacy note (user_id null)
-    const isOwnNote  = currentUser ? n.user_id === currentUser.id : n.user_id === null;
-    const isPublic   = n.is_public === 1;
-    // CSS classes
-    const noteClass  = ['note-item',
-      (n.is_pinned && !showArchived) ? 'pinned' : '',
-      showArchived ? 'archived' : '',
-      (isOwnNote && isPublic && !showArchived) ? 'own-public' : '',
-      (!isOwnNote && isPublic) ? 'public-other' : '',
+    // Roles
+    const isOwnNote    = currentUser ? n.user_id === currentUser.id : n.user_id === null;
+    const isSharedUser = !isOwnNote && currentUser &&
+                         (n.shares || []).some(s => s.user_id === currentUser.id);
+    const isPublic     = n.is_public === 1;
+    // CSS class set
+    const noteClass = ['note-item',
+      (n.is_pinned && !showArchived) ? 'pinned'       : '',
+      showArchived                   ? 'archived'      : '',
+      (isOwnNote && isPublic && !showArchived) ? 'own-public'  : '',
+      (!isOwnNote && isPublic && !isSharedUser) ? 'public-other' : '',
     ].filter(Boolean).join(' ');
-    // Banner for other users' public notes
-    const publicBanner = (!isOwnNote && isPublic)
+    // Public banner (for other users' public notes that are NOT shared with current user)
+    const publicBanner = (!isOwnNote && isPublic && !isSharedUser)
       ? `<div class="note-public-banner">🌐 Veřejná poznámka · Zveřejnil: ${escAttr(n.owner_name || 'Neznámý uživatel')}</div>`
       : '';
-    // Visibility toggle for own notes (not in archive)
+    // Shared badge (visible to owner + shared users)
+    const shareList = (n.shares || []);
+    const sharedBadge = shareList.length > 0
+      ? `<span class="note-shared-badge">👥 Sdílená
+           <span class="share-tt">Sdíleno s: ${shareList.map(s => escAttr(s.full_name)).join(', ')}</span>
+         </span>`
+      : '';
+    // Visibility toggle btn (owner only)
     const visBtn = (isOwnNote && !showArchived)
       ? `<button class="btn-visibility${isPublic ? ' public' : ''}" onclick="toggleVisibility(${n.id})" title="${isPublic ? 'Skrýt (učinit soukromou)' : 'Zveřejnit'}">${isPublic ? '🌐' : '🔒'}</button>`
+      : '';
+    // Share btn (owner only)
+    const shareBtn = (isOwnNote && !showArchived)
+      ? `<button class="btn-share" id="share-btn-${n.id}" onclick="startShare(${n.id})" title="Sdílet s uživateli">👥</button>`
       : '';
     // Action buttons
     const actions = showArchived
@@ -1043,14 +1207,46 @@ async function loadNotes() {
           ? `<button class="btn-pin${n.is_pinned ? ' active' : ''}" onclick="togglePin(${n.id})" title="${n.is_pinned ? 'Odepnout' : 'Připnout'}">📌</button>
              <button class="btn btn-edit" onclick="startEdit(${n.id})">✏️ Upravit</button>
              <button class="btn-archive" onclick="archiveNote(${n.id})" title="Archivovat">🗑</button>
-             ${visBtn}`
-          : '');
-    return `<div class="${noteClass}" id="note-${n.id}" data-text="${escAttr(n.text)}">
+             ${visBtn}${shareBtn}`
+          : (isSharedUser
+              ? `<button class="btn btn-edit" onclick="startEdit(${n.id})" title="Upravit obsah poznámky">✏️ Upravit</button>`
+              : ''));   // public-other: read-only
+    // Edit area — tags only for owner
+    const editTagsHtml = isOwnNote
+      ? `<div class="tag-field" style="margin-bottom:.5rem">
+           <div class="tag-input-wrap" id="editTagWrap${n.id}" onclick="document.getElementById('editTagInput${n.id}').focus()">
+             <div id="editTagChips${n.id}"></div>
+             <input class="tag-input-inner" id="editTagInput${n.id}" placeholder="Tagy..."/>
+             <div class="tag-dropdown" id="editTagDropdown${n.id}"></div>
+           </div>
+         </div>`
+      : '';
+    // Share panel (owner only, hidden by default)
+    const sharePanelHtml = (isOwnNote && !showArchived)
+      ? `<div class="share-panel" id="share-panel-${n.id}" style="display:none">
+           <div class="share-panel-header">
+             <span class="share-panel-title">👥 Sdílet s uživateli</span>
+             <button class="btn-close-share" onclick="closeShare(${n.id})">✕</button>
+           </div>
+           <div class="share-chips-wrap" id="share-chips-${n.id}"></div>
+           <div class="share-input-wrap">
+             <input class="share-input" id="share-input-${n.id}" placeholder="Hledat uživatele (login nebo jméno)…" autocomplete="off"/>
+             <div class="share-dropdown" id="share-dropdown-${n.id}"></div>
+           </div>
+           <div class="share-error" id="share-error-${n.id}"></div>
+           <div class="share-actions">
+             <button class="btn btn-save" onclick="saveShares(${n.id})">✓ Uložit sdílení</button>
+             <button class="btn btn-cancel" onclick="closeShare(${n.id})">✕ Zrušit</button>
+           </div>
+         </div>`
+      : '';
+    return `<div class="${noteClass}" id="note-${n.id}" data-text="${escAttr(n.text)}" data-shares="${escAttr(JSON.stringify(shareList))}">
       ${publicBanner}
       <div class="note-header">
         <div class="note-dates">
           <div class="note-meta">🕐 Vytvořeno: ${fmt(n.created_at)}</div>
           ${n.updated_at ? `<div class="note-meta edited">✏️ Editováno: ${fmt(n.updated_at)}</div>` : ''}
+          ${sharedBadge}
         </div>
         <div class="note-actions">
           ${actions}
@@ -1058,6 +1254,7 @@ async function loadNotes() {
       </div>
       <div class="note-text">${renderText(n.text)}</div>
       ${tagHtml ? `<div class="note-tags">${tagHtml}</div>` : ''}
+      ${sharePanelHtml}
       <div class="note-edit-area">
         <div class="format-toolbar">
           <button class="fmt-btn" title="Tučně" onmousedown="event.preventDefault();fmtEdit(${n.id},'bold','**','**')"><b>B</b></button>
@@ -1069,13 +1266,7 @@ async function loadNotes() {
         </div>
         <div id="editWysiwyg-${n.id}" class="note-editor" contenteditable="true" data-placeholder="Uprav poznámku..." style="display:none"></div>
         <textarea id="edit-${n.id}" style="display:none">${esc(n.text)}</textarea>
-        <div class="tag-field" style="margin-bottom:.5rem">
-          <div class="tag-input-wrap" id="editTagWrap${n.id}" onclick="document.getElementById('editTagInput${n.id}').focus()">
-            <div id="editTagChips${n.id}"></div>
-            <input class="tag-input-inner" id="editTagInput${n.id}" placeholder="Tagy..."/>
-            <div class="tag-dropdown" id="editTagDropdown${n.id}"></div>
-          </div>
-        </div>
+        ${editTagsHtml}
         <div class="note-edit-actions">
           <button class="btn btn-save" onclick="saveEdit(${n.id})">✓ Uložit</button>
           <button class="btn btn-cancel" onclick="cancelEdit(${n.id})">✕ Zrušit</button>
@@ -1089,20 +1280,27 @@ async function loadNotes() {
   if (hasBoth) html += '<div class="notes-section-sep" style="margin-top:.5rem">Ostatní poznámky</div>';
   html += unpinned.map(noteHtml).join('');
   list.innerHTML = html;
-  // Inicializuj tag komponenty a event handlery pro editaci (jen pro vlastní poznámky)
+  // Inicializuj editory a share panel pro přístupné poznámky
   notes.forEach(n => {
-    const isOwnNote = currentUser ? n.user_id === currentUser.id : n.user_id === null;
-    if (!isOwnNote) return; // cizí veřejné poznámky nelze editovat
-    makeTagInputComponent(`editTagWrap${n.id}`,`editTagChips${n.id}`,`editTagInput${n.id}`,`editTagDropdown${n.id}`);
-    window[`setTags_editTagInput${n.id}`](n.tags || []);
-    // Textarea: Enter = uložit
+    const isOwnNote    = currentUser ? n.user_id === currentUser.id : n.user_id === null;
+    const isSharedUser = !isOwnNote && currentUser &&
+                         (n.shares || []).some(s => s.user_id === currentUser.id);
+    if (!isOwnNote && !isSharedUser) return; // read-only: skip
+    // Tags: only owner
+    if (isOwnNote) {
+      makeTagInputComponent(`editTagWrap${n.id}`,`editTagChips${n.id}`,`editTagInput${n.id}`,`editTagDropdown${n.id}`);
+      window[`setTags_editTagInput${n.id}`](n.tags || []);
+      // Share input autocomplete
+      setupShareInput(n.id);
+    }
+    // Textarea Enter = save
     const editTa = document.getElementById(`edit-${n.id}`);
     if (editTa) {
       editTa.addEventListener('keydown', e => {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit(n.id); }
       });
     }
-    // WYSIWYG edit editor
+    // WYSIWYG editor
     const editDiv = document.getElementById(`editWysiwyg-${n.id}`);
     if (editDiv) setupWysiwygEditor(editDiv, () => saveEdit(n.id));
   });
@@ -1211,10 +1409,12 @@ function cancelEdit(id) {
 async function saveEdit(id) {
   const text = _getEditContent(id).trim();
   if (!text || text === '<br>') { showToast('Text nesmí být prázdný!'); return; }
-  const tags = window[`getTags_editTagInput${id}`]();
+  const tagsGetter = window[`getTags_editTagInput${id}`];
+  const body = { text };
+  if (tagsGetter) body.tags = tagsGetter();  // only send tags if owner (getter exists)
   const res  = await fetch(`/api/notes/${id}`, {
     method: 'PUT', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ text, tags })
+    body: JSON.stringify(body)
   });
   if (res.ok) {
     if (editingNoteId === id) editingNoteId = null;

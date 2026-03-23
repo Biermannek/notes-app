@@ -46,6 +46,12 @@ def init_db():
         PRIMARY KEY (note_id, tag_id),
         FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE,
         FOREIGN KEY (tag_id)  REFERENCES tags(id)  ON DELETE CASCADE)''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS note_shares (
+        note_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        PRIMARY KEY (note_id, user_id),
+        FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)''')
     # Migrace starších DB
     for col, definition in [
         ('updated_at',  'DATETIME'),
@@ -74,7 +80,7 @@ def current_user_id():
 def user_filter(strict=False):
     """Returns (sql_condition, params) for filtering notes by current user.
     strict=True: only own notes (used for archive view).
-    strict=False: own notes + public notes from all users.
+    strict=False: own notes + public + notes shared with current user.
     """
     uid = current_user_id()
     if strict:
@@ -83,7 +89,11 @@ def user_filter(strict=False):
         return ' AND n.user_id IS NULL', []
     else:
         if uid:
-            return ' AND (n.user_id = ? OR n.is_public = 1)', [uid]
+            return (
+                ' AND (n.user_id = ? OR n.is_public = 1 OR '
+                'EXISTS (SELECT 1 FROM note_shares ns WHERE ns.note_id = n.id AND ns.user_id = ?))',
+                [uid, uid]
+            )
         return ' AND (n.user_id IS NULL OR n.is_public = 1)', []
 
 
@@ -121,6 +131,26 @@ def get_tags_for_notes(conn, note_ids):
     result = {}
     for row in rows:
         result.setdefault(row['note_id'], []).append(row['name'])
+    return result
+
+
+def get_shares_for_notes(conn, note_ids):
+    if not note_ids:
+        return {}
+    ph = ','.join('?' * len(note_ids))
+    rows = conn.execute(
+        f'SELECT ns.note_id, ns.user_id, u.username, u.full_name '
+        f'FROM note_shares ns JOIN users u ON ns.user_id = u.id '
+        f'WHERE ns.note_id IN ({ph}) ORDER BY u.full_name',
+        note_ids
+    ).fetchall()
+    result = {}
+    for row in rows:
+        result.setdefault(row['note_id'], []).append({
+            'user_id':   row['user_id'],
+            'username':  row['username'],
+            'full_name': row['full_name'],
+        })
     return result
 
 
@@ -356,14 +386,16 @@ def get_notes():
             f'{sel} WHERE 1=1{base_cond} ORDER BY {order_clause}', base_params
         ).fetchall()
 
-    note_ids = [r['id'] for r in rows]
-    tags_map = get_tags_for_notes(conn, note_ids)
+    note_ids   = [r['id'] for r in rows]
+    tags_map   = get_tags_for_notes(conn, note_ids)
+    shares_map = get_shares_for_notes(conn, note_ids)
     conn.close()
 
     result = []
     for r in rows:
         d = dict(r)
-        d['tags'] = tags_map.get(d['id'], [])
+        d['tags']   = tags_map.get(d['id'], [])
+        d['shares'] = shares_map.get(d['id'], [])
         result.append(d)
     return jsonify(result)
 
@@ -383,10 +415,11 @@ def add_note():
     note_id = cursor.lastrowid
     save_tags_for_note(conn, note_id, data.get('tags', []))
     conn.commit()
-    row  = conn.execute(f'{note_select()} WHERE n.id = ?', (note_id,)).fetchone()
-    tags = get_tags_for_notes(conn, [note_id]).get(note_id, [])
+    row    = conn.execute(f'{note_select()} WHERE n.id = ?', (note_id,)).fetchone()
+    tags   = get_tags_for_notes(conn, [note_id]).get(note_id, [])
+    shares = get_shares_for_notes(conn, [note_id]).get(note_id, [])
     conn.close()
-    result = dict(row); result['tags'] = tags
+    result = dict(row); result['tags'] = tags; result['shares'] = shares
     return jsonify(result), 201
 
 
@@ -395,8 +428,17 @@ def update_note(note_id):
     data = request.get_json()
     if not data or not data.get('text', '').strip():
         return jsonify({'error': 'Text nesmí být prázdný'}), 400
+    uid  = current_user_id()
     conn = get_db()
-    if not check_note_access(conn, note_id):
+    row  = conn.execute('SELECT user_id FROM notes WHERE id = ?', (note_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'error': 'Poznámka nenalezena'}), 404
+    is_owner       = row['user_id'] == uid
+    is_shared_user = (not is_owner and uid and
+                      conn.execute('SELECT 1 FROM note_shares WHERE note_id = ? AND user_id = ?',
+                                   (note_id, uid)).fetchone() is not None)
+    if not is_owner and not is_shared_user:
         conn.close()
         return jsonify({'error': 'Přístup odepřen'}), 403
     res = conn.execute(
@@ -406,12 +448,14 @@ def update_note(note_id):
     if res.rowcount == 0:
         conn.close()
         return jsonify({'error': 'Poznámka nenalezena'}), 404
-    save_tags_for_note(conn, note_id, data.get('tags', []))
+    if is_owner:
+        save_tags_for_note(conn, note_id, data.get('tags', []))
     conn.commit()
-    row  = conn.execute(f'{note_select()} WHERE n.id = ?', (note_id,)).fetchone()
-    tags = get_tags_for_notes(conn, [note_id]).get(note_id, [])
+    row    = conn.execute(f'{note_select()} WHERE n.id = ?', (note_id,)).fetchone()
+    tags   = get_tags_for_notes(conn, [note_id]).get(note_id, [])
+    shares = get_shares_for_notes(conn, [note_id]).get(note_id, [])
     conn.close()
-    result = dict(row); result['tags'] = tags
+    result = dict(row); result['tags'] = tags; result['shares'] = shares
     return jsonify(result)
 
 
@@ -449,6 +493,71 @@ def toggle_archive(note_id):
     row = conn.execute(f'{note_select()} WHERE n.id = ?', (note_id,)).fetchone()
     conn.close()
     return jsonify(dict(row))
+
+
+@app.route('/api/users/search', methods=['GET'])
+def search_users():
+    """Search users by username or full_name (for share autocomplete)."""
+    uid = current_user_id()
+    if not uid:
+        return jsonify([]), 401
+    q = request.args.get('q', '').strip().lower()
+    if len(q) < 1:
+        return jsonify([])
+    conn = get_db()
+    rows = conn.execute(
+        'SELECT username, full_name FROM users WHERE id != ? AND '
+        '(username LIKE ? OR LOWER(full_name) LIKE ?) LIMIT 8',
+        (uid, f'%{q}%', f'%{q}%')
+    ).fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route('/api/notes/<int:note_id>/shares', methods=['GET'])
+def get_note_shares(note_id):
+    conn = get_db()
+    if not check_note_access(conn, note_id):
+        conn.close()
+        return jsonify({'error': 'Přístup odepřen'}), 403
+    rows = conn.execute(
+        'SELECT u.user_id, u.username, u.full_name FROM note_shares ns '
+        'JOIN users u ON ns.user_id = u.id WHERE ns.note_id = ? ORDER BY u.full_name',
+        (note_id,)
+    ).fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route('/api/notes/<int:note_id>/shares', methods=['PUT'])
+def update_note_shares(note_id):
+    conn = get_db()
+    if not check_note_access(conn, note_id):
+        conn.close()
+        return jsonify({'error': 'Přístup odepřen'}), 403
+    data      = request.get_json() or {}
+    usernames = [u.strip().lower() for u in data.get('usernames', []) if u.strip()]
+    # Validate all usernames exist
+    user_ids = []
+    for username in usernames:
+        row = conn.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'error': f'Uživatel „{username}" neexistuje'}), 404
+        user_ids.append(row['id'])
+    # Replace shares (full set)
+    conn.execute('DELETE FROM note_shares WHERE note_id = ?', (note_id,))
+    for share_uid in user_ids:
+        conn.execute('INSERT OR IGNORE INTO note_shares (note_id, user_id) VALUES (?, ?)',
+                     (note_id, share_uid))
+    conn.commit()
+    rows = conn.execute(
+        'SELECT ns.user_id, u.username, u.full_name FROM note_shares ns '
+        'JOIN users u ON ns.user_id = u.id WHERE ns.note_id = ? ORDER BY u.full_name',
+        (note_id,)
+    ).fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
 
 
 @app.route('/api/notes/<int:note_id>/visibility', methods=['PUT'])
