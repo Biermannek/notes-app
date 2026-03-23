@@ -52,6 +52,11 @@ def init_db():
         PRIMARY KEY (note_id, user_id),
         FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS user_settings (
+        user_id           INTEGER PRIMARY KEY,
+        show_public_notes INTEGER NOT NULL DEFAULT 1,
+        accept_shares     INTEGER NOT NULL DEFAULT 1,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)''')
     # Migrace starších DB
     for col, definition in [
         ('updated_at',  'DATETIME'),
@@ -77,10 +82,10 @@ def current_user_id():
     return session.get('user_id')
 
 
-def user_filter(strict=False):
+def user_filter(strict=False, show_public=True):
     """Returns (sql_condition, params) for filtering notes by current user.
     strict=True: only own notes (used for archive view).
-    strict=False: own notes + public + notes shared with current user.
+    strict=False: own notes + (public if show_public) + notes shared with current user.
     """
     uid = current_user_id()
     if strict:
@@ -89,11 +94,18 @@ def user_filter(strict=False):
         return ' AND n.user_id IS NULL', []
     else:
         if uid:
-            return (
-                ' AND (n.user_id = ? OR n.is_public = 1 OR '
-                'EXISTS (SELECT 1 FROM note_shares ns WHERE ns.note_id = n.id AND ns.user_id = ?))',
-                [uid, uid]
-            )
+            if show_public:
+                return (
+                    ' AND (n.user_id = ? OR n.is_public = 1 OR '
+                    'EXISTS (SELECT 1 FROM note_shares ns WHERE ns.note_id = n.id AND ns.user_id = ?))',
+                    [uid, uid]
+                )
+            else:
+                return (
+                    ' AND (n.user_id = ? OR '
+                    'EXISTS (SELECT 1 FROM note_shares ns WHERE ns.note_id = n.id AND ns.user_id = ?))',
+                    [uid, uid]
+                )
         return ' AND (n.user_id IS NULL OR n.is_public = 1)', []
 
 
@@ -103,6 +115,18 @@ def check_note_access(conn, note_id):
     if not row:
         return False
     return row['user_id'] == current_user_id()
+
+
+def get_user_settings(conn, uid):
+    """Returns settings dict for user. Returns defaults if no row or no uid."""
+    if not uid:
+        return {'show_public_notes': 1, 'accept_shares': 1}
+    row = conn.execute(
+        'SELECT show_public_notes, accept_shares FROM user_settings WHERE user_id = ?', (uid,)
+    ).fetchone()
+    if row:
+        return {'show_public_notes': row['show_public_notes'], 'accept_shares': row['accept_shares']}
+    return {'show_public_notes': 1, 'accept_shares': 1}
 
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
@@ -358,7 +382,11 @@ def get_notes():
     search_terms  = parse_search(search_raw) if search_raw else []
     sel           = note_select()
 
-    user_cond, user_params = user_filter(strict=show_archived)
+    conn = get_db()
+    uid  = current_user_id()
+    settings = get_user_settings(conn, uid)
+    user_cond, user_params = user_filter(strict=show_archived,
+                                         show_public=bool(settings['show_public_notes']))
     base_cond   = f'{user_cond} AND n.is_archived = {arch_val}'
     base_params = user_params[:]
     if search_terms:
@@ -366,7 +394,6 @@ def get_notes():
         base_cond  += ' AND (' + ' OR '.join(conds) + ')'
         base_params += [f'%{t}%' for t in search_terms]
 
-    conn = get_db()
     if tag_list:
         ph = ','.join('?' * len(tag_list))
         if tag_mode == 'and':
@@ -537,14 +564,19 @@ def update_note_shares(note_id):
         return jsonify({'error': 'Přístup odepřen'}), 403
     data      = request.get_json() or {}
     usernames = [u.strip().lower() for u in data.get('usernames', []) if u.strip()]
-    # Validate all usernames exist
+    # Validate all usernames exist and accept shares
     user_ids = []
     for username in usernames:
         row = conn.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone()
         if not row:
             conn.close()
             return jsonify({'error': f'Uživatel „{username}" neexistuje'}), 404
-        user_ids.append(row['id'])
+        target_uid = row['id']
+        target_settings = get_user_settings(conn, target_uid)
+        if not target_settings['accept_shares']:
+            conn.close()
+            return jsonify({'error': f'Uživatel „{username}" nepřijímá sdílení poznámek'}), 403
+        user_ids.append(target_uid)
     # Replace shares (full set)
     conn.execute('DELETE FROM note_shares WHERE note_id = ?', (note_id,))
     for share_uid in user_ids:
@@ -576,6 +608,38 @@ def toggle_visibility(note_id):
     row = conn.execute(f'{note_select()} WHERE n.id = ?', (note_id,)).fetchone()
     conn.close()
     return jsonify(dict(row))
+
+
+@app.route('/api/settings', methods=['GET'])
+def api_get_settings():
+    uid = current_user_id()
+    if not uid:
+        return jsonify({'error': 'Nejste přihlášeni'}), 401
+    conn = get_db()
+    s = get_user_settings(conn, uid)
+    conn.close()
+    return jsonify(s)
+
+
+@app.route('/api/settings', methods=['PUT'])
+def api_update_settings():
+    uid = current_user_id()
+    if not uid:
+        return jsonify({'error': 'Nejste přihlášeni'}), 401
+    data         = request.get_json() or {}
+    show_public  = 1 if data.get('show_public_notes', True) else 0
+    accept_share = 1 if data.get('accept_shares',     True) else 0
+    conn = get_db()
+    conn.execute(
+        'INSERT INTO user_settings (user_id, show_public_notes, accept_shares) VALUES (?, ?, ?) '
+        'ON CONFLICT(user_id) DO UPDATE SET '
+        'show_public_notes = excluded.show_public_notes, '
+        'accept_shares     = excluded.accept_shares',
+        (uid, show_public, accept_share)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({'show_public_notes': show_public, 'accept_shares': accept_share})
 
 
 @app.route('/api/stats/daily', methods=['GET'])

@@ -270,6 +270,35 @@
     .share-actions{display:flex;gap:.4rem;margin-top:.65rem}
     .note-shared-banner{display:flex;align-items:center;gap:.4rem;font-size:.78rem;color:#7c3aed;font-weight:600;margin-bottom:.45rem;padding:.3rem .55rem;background:#f5f3ff;border-radius:6px}
 
+    /* ── Settings page ── */
+    .settings-group{display:flex;flex-direction:column}
+    .settings-row{display:flex;align-items:center;justify-content:space-between;gap:1.25rem;padding:1rem 0;border-bottom:1px solid #f0f2f5}
+    .settings-row:last-child{border-bottom:none;padding-bottom:0}
+    .settings-label{flex:1}
+    .settings-title{font-weight:600;font-size:.95rem;color:#1a1a2e;margin-bottom:.25rem}
+    .settings-desc{font-size:.8rem;color:#888;line-height:1.4}
+    .settings-dirty-bar{display:none;align-items:center;gap:.75rem;background:#fef3c7;border:1.5px solid #f59e0b;border-radius:10px;padding:.65rem 1rem;margin-bottom:1rem;font-size:.85rem;font-weight:600;color:#92400e;flex-wrap:wrap}
+    .settings-dirty-bar.visible{display:flex}
+    .btn-save-dirty{padding:.3rem .75rem;border:none;border-radius:6px;background:#f59e0b;color:#fff;font-size:.82rem;font-weight:600;cursor:pointer;transition:background .15s}
+    .btn-save-dirty:hover{background:#d97706}
+    .btn-discard-dirty{padding:.3rem .75rem;border:1.5px solid #d97706;border-radius:6px;background:transparent;color:#92400e;font-size:.82rem;font-weight:600;cursor:pointer;transition:background .15s}
+    .btn-discard-dirty:hover{background:#fde68a}
+    .settings-saved-msg{color:#10b981;font-size:.85rem;font-weight:600;display:none}
+    .settings-saved-msg.visible{display:inline}
+
+    /* ── Modal (unsaved changes warning) ── */
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;display:none;align-items:center;justify-content:center;padding:1rem}
+    .modal-overlay.visible{display:flex}
+    .modal-box{background:#fff;border-radius:16px;padding:2rem;max-width:420px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,.18)}
+    .modal-title{font-size:1.15rem;font-weight:700;color:#1a1a2e;margin-bottom:.5rem}
+    .modal-body{font-size:.92rem;color:#555;margin-bottom:1.5rem;line-height:1.55}
+    .modal-actions{display:flex;flex-direction:column;gap:.5rem}
+    .modal-actions .btn{justify-content:center;margin-top:0}
+    .btn-modal-discard{padding:.65rem 1.25rem;border:1.5px solid #e0e0e0;border-radius:8px;background:#fff;color:#555;font-size:.92rem;font-weight:600;cursor:pointer;transition:all .15s;text-align:center}
+    .btn-modal-discard:hover{border-color:#f87171;color:#f87171}
+    .btn-modal-stay{padding:.65rem 1.25rem;border:1.5px solid #e0e0e0;border-radius:8px;background:#f0f2f5;color:#555;font-size:.92rem;font-weight:600;cursor:pointer;transition:all .15s;text-align:center}
+    .btn-modal-stay:hover{background:#e0e2e8}
+
     /* ── Hamburger button ── */
     .hamburger-btn{display:none;background:transparent;border:none;color:rgba(255,255,255,.85);font-size:1.5rem;cursor:pointer;padding:.35rem .85rem;line-height:1;border-radius:6px;transition:background .15s;flex-shrink:0;align-self:stretch;align-items:center}
     .hamburger-btn:hover{background:rgba(255,255,255,.1)}
@@ -309,6 +338,7 @@
     <div class="nav-item active" onclick="showPage('notes')" id="nav-notes"><span class="nav-icon">📋</span> Poznámky</div>
     <div class="nav-sub" id="navTagList"></div>
     <div class="nav-item" onclick="showPage('stats')" id="nav-stats"><span class="nav-icon">📊</span> Statistiky</div>
+    <div class="nav-item" onclick="showPage('settings')" id="nav-settings" style="display:none"><span class="nav-icon">⚙️</span> Nastavení</div>
     <div class="sidebar-footer">Verze: {{ version }}</div>
   </div>
 </nav>
@@ -516,7 +546,64 @@
     </div>
   </div>
 
+  <!-- PAGE: Nastavení -->
+  <div class="page" id="page-settings">
+    <h2 class="page-title">⚙️ Nastavení</h2>
+
+    <div class="settings-dirty-bar" id="settingsDirtyBar">
+      ⚠️ Máš neuložené změny v nastavení
+      <button class="btn-save-dirty" onclick="saveSettings()">💾 Uložit</button>
+      <button class="btn-discard-dirty" onclick="discardSettings()">Zahodit</button>
+    </div>
+
+    <div class="card">
+      <div class="settings-group">
+
+        <div class="settings-row">
+          <div class="settings-label">
+            <div class="settings-title">Zobrazovat veřejné poznámky</div>
+            <div class="settings-desc">Zobrazovat ve feedu veřejné poznámky ostatních uživatelů.</div>
+          </div>
+          <div class="toggle-group">
+            <button class="toggle-btn" id="set-spn-yes" onclick="setSettingToggle('show_public_notes', 1)">Ano</button>
+            <button class="toggle-btn" id="set-spn-no"  onclick="setSettingToggle('show_public_notes', 0)">Ne</button>
+          </div>
+        </div>
+
+        <div class="settings-row">
+          <div class="settings-label">
+            <div class="settings-title">Přijímat sdílení poznámek</div>
+            <div class="settings-desc">Ostatní uživatelé mohou sdílet poznámky s tímto účtem. Změna nemá vliv na již sdílené poznámky.</div>
+          </div>
+          <div class="toggle-group">
+            <button class="toggle-btn" id="set-as-yes" onclick="setSettingToggle('accept_shares', 1)">Ano</button>
+            <button class="toggle-btn" id="set-as-no"  onclick="setSettingToggle('accept_shares', 0)">Ne</button>
+          </div>
+        </div>
+
+      </div>
+      <div style="display:flex;align-items:center;gap:.75rem;margin-top:1.5rem">
+        <button class="btn btn-primary" style="margin-top:0" onclick="saveSettings()">💾 Uložit nastavení</button>
+        <span class="settings-saved-msg" id="settingsSavedMsg">✓ Uloženo</span>
+      </div>
+    </div>
+  </div>
+
 </main>
+
+<!-- Modal: neuložené změny v nastavení -->
+<div class="modal-overlay" id="settingsDirtyModal">
+  <div class="modal-box">
+    <div class="modal-title">⚠️ Neuložené změny</div>
+    <div class="modal-body">V nastavení máš neuložené změny. Co chceš udělat před odchodem ze stránky?</div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="saveAndNavigate()">💾 Uložit a odejít</button>
+      <button class="btn-modal-discard" onclick="discardAndNavigate()">Zahodit změny a odejít</button>
+      <button class="btn-modal-stay" onclick="stayOnSettings()">Zůstat na stránce</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -531,6 +618,10 @@ let showArchived    = false;
 let searchQuery     = '';
 let searchDebounce  = null;
 let currentOrder    = 'desc';
+// Settings state
+let currentSettings = { show_public_notes: 1, accept_shares: 1 };
+let settingsDirty   = false;
+let pendingNavPage  = null;
 let currentStatType = 'created';
 let currentPeriod   = 7;
 let dailyChart      = null;
@@ -711,6 +802,58 @@ function tagStyle(name) {
   return { color: `hsl(${hue},55%,35%)`, bg: `hsl(${hue},75%,90%)` };
 }
 
+// ── Settings ──────────────────────────────────────────────────────────────
+async function loadSettings() {
+  if (!currentUser) return;
+  try {
+    const r = await fetch('/api/settings');
+    if (r.ok) { currentSettings = await r.json(); }
+  } catch (e) {}
+  settingsDirty = false;
+  renderSettingsUI();
+}
+function renderSettingsUI() {
+  const spY = document.getElementById('set-spn-yes');
+  const spN = document.getElementById('set-spn-no');
+  const asY = document.getElementById('set-as-yes');
+  const asN = document.getElementById('set-as-no');
+  if (!spY) return;
+  spY.classList.toggle('active', currentSettings.show_public_notes == 1);
+  spN.classList.toggle('active', currentSettings.show_public_notes == 0);
+  asY.classList.toggle('active', currentSettings.accept_shares == 1);
+  asN.classList.toggle('active', currentSettings.accept_shares == 0);
+  const bar = document.getElementById('settingsDirtyBar');
+  if (bar) bar.classList.toggle('visible', settingsDirty);
+}
+function setSettingToggle(key, value) {
+  currentSettings[key] = value;
+  settingsDirty = true;
+  renderSettingsUI();
+}
+async function saveSettings() {
+  if (!currentUser) return;
+  try {
+    const r = await fetch('/api/settings', {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(currentSettings)
+    });
+    if (r.ok) {
+      currentSettings = await r.json();
+      settingsDirty = false;
+      renderSettingsUI();
+      const msg = document.getElementById('settingsSavedMsg');
+      if (msg) { msg.classList.add('visible'); setTimeout(() => msg.classList.remove('visible'), 2500); }
+      showToast('✓ Nastavení uloženo');
+      await loadNotes();
+    } else {
+      showToast('❌ Chyba při ukládání nastavení');
+    }
+  } catch (e) { showToast('❌ Chyba spojení se serverem'); }
+}
+function discardSettings() {
+  loadSettings();
+}
+
 // ── Auth ──────────────────────────────────────────────────────────────────
 function updateTopbar() {
   const userDiv  = document.getElementById('topbarUser');
@@ -718,16 +861,19 @@ function updateTopbar() {
   const nameEl   = document.getElementById('topbarName');
   const initEl   = document.getElementById('topbarInitials');
   const privRow  = document.getElementById('newNotePrivacyRow');
+  const settingsNav = document.getElementById('nav-settings');
   if (currentUser) {
     nameEl.textContent   = currentUser.full_name;
     initEl.textContent   = currentUser.full_name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
     userDiv.style.display  = 'flex';
     loginBtn.style.display = 'none';
     if (privRow) privRow.style.display = 'flex';
+    if (settingsNav) settingsNav.style.display = 'flex';
   } else {
     userDiv.style.display  = 'none';
     loginBtn.style.display = 'inline-flex';
     if (privRow) privRow.style.display = 'none';
+    if (settingsNav) settingsNav.style.display = 'none';
     // Reset privacy state on logout
     newNoteIsPublic = false;
     const privBtn = document.getElementById('btnNewPrivacy');
@@ -744,6 +890,7 @@ async function loadCurrentUser() {
     currentUser = null;
   }
   updateTopbar();
+  await loadSettings();
 }
 
 function resetAppState() {
@@ -777,6 +924,7 @@ async function doLogin() {
     if (!r.ok) { errEl.textContent = data.error || 'Chyba přihlášení'; errEl.classList.add('visible'); return; }
     currentUser = data;
     updateTopbar();
+    await loadSettings();
     document.getElementById('loginUsername').value = '';
     document.getElementById('loginPassword').value = '';
     resetAppState();
@@ -806,6 +954,7 @@ async function doRegister() {
     if (!r.ok) { errEl.textContent = data.error || 'Chyba registrace'; errEl.classList.add('visible'); return; }
     currentUser = data;
     updateTopbar();
+    await loadSettings();
     ['regUsername','regFullName','regEmail','regPassword','regPassword2'].forEach(id => {
       document.getElementById(id).value = '';
     });
@@ -822,9 +971,12 @@ async function doRegister() {
 async function doLogout() {
   await fetch('/api/auth/logout', { method: 'POST' });
   currentUser = null;
+  settingsDirty   = false;
+  currentSettings = { show_public_notes: 1, accept_shares: 1 };
+  document.getElementById('settingsDirtyModal').classList.remove('visible');
   updateTopbar();
   resetAppState();
-  showPage('notes');
+  _doShowPage('notes');
   await loadAllTags();
   await loadNotes();
   showToast('Odhlášení proběhlo úspěšně');
@@ -976,14 +1128,39 @@ async function saveShares(id) {
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────
-function showPage(page) {
+function _doShowPage(page) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('page-' + page).classList.add('active');
   const navEl = document.getElementById('nav-' + page);
   if (navEl) navEl.classList.add('active');
   if (page === 'stats') { loadAllTags().then(buildTagStatFilter); loadDailyStats(); }
+  if (page === 'settings') loadSettings();
   closeMobileMenu();
+}
+function showPage(page) {
+  const settingsPage = document.getElementById('page-settings');
+  if (settingsDirty && settingsPage && settingsPage.classList.contains('active') && page !== 'settings') {
+    pendingNavPage = page;
+    document.getElementById('settingsDirtyModal').classList.add('visible');
+    return;
+  }
+  _doShowPage(page);
+}
+async function saveAndNavigate() {
+  document.getElementById('settingsDirtyModal').classList.remove('visible');
+  await saveSettings();
+  if (pendingNavPage) { const p = pendingNavPage; pendingNavPage = null; _doShowPage(p); }
+}
+function discardAndNavigate() {
+  document.getElementById('settingsDirtyModal').classList.remove('visible');
+  settingsDirty = false;
+  renderSettingsUI();
+  if (pendingNavPage) { const p = pendingNavPage; pendingNavPage = null; _doShowPage(p); }
+}
+function stayOnSettings() {
+  document.getElementById('settingsDirtyModal').classList.remove('visible');
+  pendingNavPage = null;
 }
 function toggleMobileMenu() {
   const sidebar = document.getElementById('sidebarNav');
