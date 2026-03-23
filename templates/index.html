@@ -284,6 +284,29 @@
 
     /* ── Settings page ── */
     .settings-group{display:flex;flex-direction:column}
+    /* ── Backup sekce ── */
+    .backup-status-row{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:1rem}
+    .backup-badge{padding:.25rem .75rem;border-radius:999px;font-size:.78rem;font-weight:700}
+    .backup-badge.on{background:#d1fae5;color:#065f46}
+    .backup-badge.off{background:#fee2e2;color:#991b1b}
+    .backup-actions{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1.25rem}
+    .btn-backup{padding:.45rem 1rem;border:none;border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer;transition:background .15s;display:inline-flex;align-items:center;gap:.35rem}
+    .btn-backup:disabled{opacity:.5;cursor:not-allowed}
+    .btn-backup.primary{background:#6c63ff;color:#fff}
+    .btn-backup.primary:hover:not(:disabled){background:#5a52d5}
+    .btn-backup.secondary{background:#f0f2f5;color:#444}
+    .btn-backup.secondary:hover:not(:disabled){background:#e0e2e8}
+    .btn-backup.danger{background:#fee2e2;color:#991b1b}
+    .btn-backup.danger:hover:not(:disabled){background:#fecaca}
+    .backup-file-list{max-height:220px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:10px;font-size:.82rem}
+    .backup-file-row{display:flex;justify-content:space-between;align-items:center;padding:.5rem .85rem;border-bottom:1px solid #f0f2f5;color:#444}
+    .backup-file-row:last-child{border-bottom:none}
+    .backup-file-name{font-family:monospace;font-size:.8rem}
+    .backup-file-size{color:#aaa;white-space:nowrap;margin-left:.5rem}
+    .backup-msg{font-size:.84rem;margin-top:.5rem;min-height:1.2em}
+    .backup-msg.ok{color:#10b981}
+    .backup-msg.err{color:#ef4444}
+    .backup-import-row{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;margin-top:.5rem}
     .settings-row{display:flex;align-items:center;justify-content:space-between;gap:1.25rem;padding:1rem 0;border-bottom:1px solid #f0f2f5}
     .settings-row:last-child{border-bottom:none;padding-bottom:0}
     .settings-label{flex:1}
@@ -627,6 +650,45 @@
         <span class="settings-saved-msg" id="settingsSavedMsg">✓ Uloženo</span>
       </div>
     </div>
+
+    <!-- Zálohy (admin only) -->
+    <div class="card" id="backupCard" style="display:none">
+      <h3 style="font-size:1.05rem;font-weight:700;color:#1a1a2e;margin-bottom:1rem">🗄️ Zálohy databáze</h3>
+
+      <div class="backup-status-row">
+        <span id="backupBadge" class="backup-badge off">● Zálohy vypnuty</span>
+        <span id="backupDirLabel" style="font-size:.82rem;color:#888;font-family:monospace"></span>
+      </div>
+      <div style="font-size:.82rem;color:#888;margin-bottom:1rem">
+        Poslední záloha: <strong id="backupLastTime">—</strong>
+        &nbsp;·&nbsp; Počet záloh: <strong id="backupCount">0</strong>
+      </div>
+
+      <div class="backup-actions">
+        <button class="btn-backup primary" id="btnBackupNow" onclick="triggerBackup()">⬇ Zálohovat teď</button>
+        <button class="btn-backup secondary" onclick="downloadDb()">💾 Stáhnout DB</button>
+        <button class="btn-backup secondary" onclick="exportJson()">📄 Exportovat JSON</button>
+      </div>
+
+      <!-- Import JSON -->
+      <div style="margin-bottom:1.25rem">
+        <div style="font-size:.88rem;font-weight:600;color:#444;margin-bottom:.4rem">Import z JSON zálohy</div>
+        <div style="font-size:.8rem;color:#888;margin-bottom:.5rem">Importuje poznámky z JSON souboru. Existující data <strong>nebudou přepsána</strong> — přidají se nové záznamy.</div>
+        <div class="backup-import-row">
+          <input type="file" id="importFileInput" accept=".json" style="font-size:.85rem" onchange="importJsonSelected()"/>
+        </div>
+        <div id="importPreview" style="display:none;margin-top:.5rem;font-size:.82rem;color:#555;background:#f8f8ff;padding:.5rem .75rem;border-radius:8px;border:1.5px solid #e0e0e0"></div>
+        <button class="btn-backup danger" id="btnImport" style="display:none;margin-top:.6rem" onclick="doImportJson()">📥 Importovat</button>
+        <div class="backup-msg" id="importMsg"></div>
+      </div>
+
+      <!-- Seznam souborů -->
+      <div id="backupFileSection" style="display:none">
+        <div style="font-size:.88rem;font-weight:600;color:#444;margin-bottom:.5rem">Uložené zálohy na NASu</div>
+        <div class="backup-file-list" id="backupFileList"></div>
+      </div>
+      <div class="backup-msg" id="backupMsg"></div>
+    </div>
   </div>
 
 </main>
@@ -872,6 +934,7 @@ async function loadSettings() {
   } catch (e) {}
   settingsDirty = false;
   renderSettingsUI();
+  await loadBackupStatus();
 }
 function renderSettingsUI() {
   const spY = document.getElementById('set-spn-yes');
@@ -913,6 +976,136 @@ async function saveSettings() {
 }
 function discardSettings() {
   loadSettings();
+}
+
+// ── Backup (admin only) ───────────────────────────────────────────────────
+function isAdmin() {
+  return currentUser && currentUser.role === 'admin';
+}
+
+async function loadBackupStatus() {
+  const card = document.getElementById('backupCard');
+  if (!card) return;
+  if (!isAdmin()) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  try {
+    const r = await fetch('/api/backup/status');
+    if (!r.ok) return;
+    const d = await r.json();
+    const badge    = document.getElementById('backupBadge');
+    const dirLabel = document.getElementById('backupDirLabel');
+    const lastTime = document.getElementById('backupLastTime');
+    const count    = document.getElementById('backupCount');
+    const fileSection = document.getElementById('backupFileSection');
+    const fileList    = document.getElementById('backupFileList');
+    badge.textContent = d.enabled ? '● Zálohy aktivní' : '● Zálohy vypnuty';
+    badge.className = 'backup-badge ' + (d.enabled ? 'on' : 'off');
+    dirLabel.textContent = d.backup_dir ? d.backup_dir : '';
+    lastTime.textContent = d.last_backup || '—';
+    count.textContent    = d.backup_count;
+    document.getElementById('btnBackupNow').disabled = !d.enabled;
+    if (d.backups && d.backups.length) {
+      fileSection.style.display = 'block';
+      fileList.innerHTML = d.backups.map(f =>
+        `<div class="backup-file-row">
+           <span class="backup-file-name">${f.name}</span>
+           <span class="backup-file-size">${f.size_kb} KB</span>
+         </div>`
+      ).join('');
+    } else {
+      fileSection.style.display = 'none';
+    }
+  } catch(e) {}
+}
+
+async function triggerBackup() {
+  const btn = document.getElementById('btnBackupNow');
+  const msg = document.getElementById('backupMsg');
+  btn.disabled = true;
+  msg.textContent = '⏳ Zálohování…';
+  msg.className = 'backup-msg';
+  try {
+    const r = await fetch('/api/backup/trigger', { method: 'POST' });
+    const d = await r.json();
+    if (d.ok) {
+      msg.textContent = '✓ Záloha vytvořena: ' + d.file;
+      msg.className = 'backup-msg ok';
+      await loadBackupStatus();
+    } else {
+      msg.textContent = '❌ ' + (d.error || 'Chyba zálohy');
+      msg.className = 'backup-msg err';
+    }
+  } catch(e) {
+    msg.textContent = '❌ Chyba spojení';
+    msg.className = 'backup-msg err';
+  }
+  btn.disabled = false;
+}
+
+function downloadDb() {
+  window.location.href = '/api/backup/download-db';
+}
+
+function exportJson() {
+  window.location.href = '/api/backup/export-json';
+}
+
+let _importData = null;
+
+function importJsonSelected() {
+  const file = document.getElementById('importFileInput').files[0];
+  const preview = document.getElementById('importPreview');
+  const btnImport = document.getElementById('btnImport');
+  const msg = document.getElementById('importMsg');
+  _importData = null;
+  preview.style.display = 'none';
+  btnImport.style.display = 'none';
+  msg.textContent = '';
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      _importData = JSON.parse(e.target.result);
+      const nc = (_importData.notes || []).length;
+      const uc = (_importData.users || []).length;
+      preview.style.display = 'block';
+      preview.textContent = `Soubor: ${file.name} · Exportováno: ${_importData.exported_at || '?'} · Verze: ${_importData.version || '?'} · Poznámky: ${nc} · Uživatelé: ${uc}`;
+      btnImport.style.display = 'inline-flex';
+    } catch(err) {
+      msg.textContent = '❌ Neplatný JSON soubor';
+      msg.className = 'backup-msg err';
+    }
+  };
+  reader.readAsText(file);
+}
+
+async function doImportJson() {
+  if (!_importData) return;
+  const btn = document.getElementById('btnImport');
+  const msg = document.getElementById('importMsg');
+  btn.disabled = true;
+  msg.textContent = '⏳ Importuji…';
+  msg.className = 'backup-msg';
+  try {
+    const r = await fetch('/api/backup/import-json', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(_importData)
+    });
+    const d = await r.json();
+    if (d.ok) {
+      msg.textContent = `✓ Importováno: ${d.imported_notes} poznámek, ${d.imported_users} uživatelů`;
+      msg.className = 'backup-msg ok';
+      await loadNotes();
+    } else {
+      msg.textContent = '❌ ' + (d.error || 'Chyba importu');
+      msg.className = 'backup-msg err';
+    }
+  } catch(e) {
+    msg.textContent = '❌ Chyba spojení';
+    msg.className = 'backup-msg err';
+  }
+  btn.disabled = false;
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────

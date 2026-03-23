@@ -1,14 +1,92 @@
-from flask import Flask, request, jsonify, render_template, session
+from flask import Flask, request, jsonify, render_template, session, Response, send_file
 from datetime import datetime, timedelta
 from version import __version__
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 import os
 import re
+import json
+import glob
+import threading
+import fcntl
+import time
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'notes-app-secret-key-change-in-production')
-DB_PATH = os.environ.get('DB_PATH', '/data/notes.db')
+DB_PATH        = os.environ.get('DB_PATH',    '/data/notes.db')
+BACKUP_DIR     = os.environ.get('BACKUP_DIR', '')
+BACKUP_STATE   = '/data/.last_backup'
+
+
+# ── Backup helpers ────────────────────────────────────────────────────────────
+
+def do_db_backup():
+    """Copy current SQLite DB to BACKUP_DIR using online backup API.
+    Returns (True, filepath) on success, (False, error_message) on failure.
+    Keeps the last 30 daily backup files.
+    """
+    bd = BACKUP_DIR
+    if not bd:
+        return False, 'BACKUP_DIR není nastaven'
+    try:
+        os.makedirs(bd, exist_ok=True)
+        ts  = datetime.now().strftime('%Y-%m-%d_%H-%M')
+        dst = os.path.join(bd, f'notes-backup-{ts}.db')
+        src_conn = sqlite3.connect(DB_PATH)
+        dst_conn = sqlite3.connect(dst)
+        src_conn.backup(dst_conn)
+        dst_conn.close()
+        src_conn.close()
+        # Retain only the 30 most recent backups
+        files = sorted(glob.glob(os.path.join(bd, 'notes-backup-*.db')))
+        for old in files[:-30]:
+            try:
+                os.remove(old)
+            except Exception:
+                pass
+        # Persist last-backup timestamp
+        with open(BACKUP_STATE, 'w') as f:
+            f.write(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+        app.logger.info(f'Backup OK: {dst}')
+        return True, dst
+    except Exception as e:
+        app.logger.error(f'Backup error: {e}')
+        return False, str(e)
+
+
+def _get_last_backup():
+    """Returns last backup datetime string, or None."""
+    if os.path.exists(BACKUP_STATE):
+        with open(BACKUP_STATE) as f:
+            return f.read().strip() or None
+    return None
+
+
+def _backup_loop():
+    """Background thread: wakes hourly, runs backup if today's hasn't been done yet."""
+    while True:
+        try:
+            if BACKUP_DIR:
+                today = datetime.now().strftime('%Y-%m-%d')
+                last  = _get_last_backup()
+                if not last or last[:10] != today:
+                    do_db_backup()
+        except Exception as e:
+            app.logger.error(f'Backup scheduler: {e}')
+        time.sleep(3600)
+
+
+def start_backup_scheduler():
+    """Start backup background thread. File lock ensures only one Gunicorn worker runs it."""
+    lock_path = '/data/.scheduler.lock'
+    try:
+        os.makedirs('/data', exist_ok=True)
+        fd = open(lock_path, 'w')
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        threading.Thread(target=_backup_loop, daemon=True).start()
+        app.logger.info('Backup scheduler started')
+    except IOError:
+        pass  # jiný worker již běží
 
 
 def get_db():
@@ -66,7 +144,7 @@ def init_db():
         ip           TEXT NOT NULL,
         attempted_at DATETIME NOT NULL DEFAULT (datetime('now', 'localtime')))''')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_ip_attempts ON ip_login_attempts(ip, attempted_at)')
-    # Migrace starších DB
+    # Migrace starších DB — tabulka notes
     for col, definition in [
         ('updated_at',  'DATETIME'),
         ('is_pinned',   'INTEGER NOT NULL DEFAULT 0'),
@@ -78,17 +156,36 @@ def init_db():
             conn.execute(f'ALTER TABLE notes ADD COLUMN {col} {definition}')
         except sqlite3.OperationalError:
             pass
+    # Migrace — role uživatelů
+    try:
+        conn.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'")
+    except sqlite3.OperationalError:
+        pass
+    # Auto-promote teplanm na admin (idempotentní)
+    conn.execute("UPDATE users SET role = 'admin' WHERE username = 'teplanm'")
     conn.commit()
     conn.close()
 
 
 init_db()
+start_backup_scheduler()
 
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
 
 def current_user_id():
     return session.get('user_id')
+
+
+def is_admin():
+    """Returns True if the current session belongs to an admin user."""
+    uid = current_user_id()
+    if not uid:
+        return False
+    conn = get_db()
+    row = conn.execute('SELECT role FROM users WHERE id = ?', (uid,)).fetchone()
+    conn.close()
+    return bool(row and row['role'] == 'admin')
 
 
 def user_filter(strict=False, show_public=True):
@@ -292,7 +389,7 @@ def auth_me():
         return jsonify(None)
     conn = get_db()
     row = conn.execute(
-        'SELECT id, username, full_name, email FROM users WHERE id = ?', (uid,)
+        'SELECT id, username, full_name, email, role FROM users WHERE id = ?', (uid,)
     ).fetchone()
     conn.close()
     if not row:
@@ -856,6 +953,154 @@ def get_tag_stats():
         ).fetchall()
     conn.close()
     return jsonify([{'name': r['name'], 'count': r['note_count']} for r in rows])
+
+
+# ── Backup routes ─────────────────────────────────────────────────────────────
+
+@app.route('/api/backup/status', methods=['GET'])
+def backup_status():
+    if not is_admin():
+        return jsonify({'error': 'Přístup odepřen'}), 403
+    bd    = BACKUP_DIR
+    files = []
+    if bd and os.path.isdir(bd):
+        raw = sorted(glob.glob(os.path.join(bd, 'notes-backup-*.db')), reverse=True)
+        for fp in raw[:30]:
+            sz = os.path.getsize(fp)
+            files.append({'name': os.path.basename(fp), 'size_kb': round(sz / 1024, 1)})
+    return jsonify({
+        'enabled':      bool(bd),
+        'backup_dir':   bd or None,
+        'last_backup':  _get_last_backup(),
+        'backup_count': len(files),
+        'backups':      files,
+    })
+
+
+@app.route('/api/backup/trigger', methods=['POST'])
+def backup_trigger():
+    if not is_admin():
+        return jsonify({'error': 'Přístup odepřen'}), 403
+    ok, msg = do_db_backup()
+    if ok:
+        return jsonify({'ok': True, 'file': os.path.basename(msg)})
+    return jsonify({'ok': False, 'error': msg}), 500
+
+
+@app.route('/api/backup/download-db', methods=['GET'])
+def backup_download_db():
+    """Download a point-in-time copy of the SQLite database."""
+    if not is_admin():
+        return jsonify({'error': 'Přístup odepřen'}), 403
+    ts   = datetime.now().strftime('%Y-%m-%d_%H-%M')
+    tmp  = f'/tmp/notes-export-{ts}.db'
+    src  = sqlite3.connect(DB_PATH)
+    dst  = sqlite3.connect(tmp)
+    src.backup(dst)
+    dst.close()
+    src.close()
+    return send_file(
+        tmp,
+        as_attachment=True,
+        download_name=f'notes-backup-{ts}.db',
+        mimetype='application/octet-stream'
+    )
+
+
+@app.route('/api/backup/export-json', methods=['GET'])
+def backup_export_json():
+    """Export full data as JSON (notes, tags, users)."""
+    if not is_admin():
+        return jsonify({'error': 'Přístup odepřen'}), 403
+    conn  = get_db()
+    users = [dict(r) for r in conn.execute(
+        'SELECT id, username, full_name, email, role, created_at FROM users'
+    ).fetchall()]
+    notes_raw = conn.execute(
+        'SELECT id, user_id, text, created_at, updated_at, '
+        'is_pinned, is_archived, is_public FROM notes'
+    ).fetchall()
+    note_ids  = [r['id'] for r in notes_raw]
+    tags_map  = get_tags_for_notes(conn, note_ids) if note_ids else {}
+    notes     = []
+    for r in notes_raw:
+        d = dict(r)
+        d['tags'] = tags_map.get(r['id'], [])
+        notes.append(d)
+    conn.close()
+    ts     = datetime.now().strftime('%Y-%m-%d_%H-%M')
+    export = {
+        'version':     __version__,
+        'exported_at': datetime.now().isoformat(),
+        'users':       users,
+        'notes':       notes,
+    }
+    return Response(
+        json.dumps(export, ensure_ascii=False, indent=2),
+        mimetype='application/json',
+        headers={'Content-Disposition': f'attachment; filename="notes-export-{ts}.json"'}
+    )
+
+
+@app.route('/api/backup/import-json', methods=['POST'])
+def backup_import_json():
+    """Import notes (and missing users) from a JSON export. Non-destructive — only adds."""
+    if not is_admin():
+        return jsonify({'error': 'Přístup odepřen'}), 403
+    data       = request.get_json() or {}
+    users_data = data.get('users', [])
+    notes_data = data.get('notes', [])
+    conn = get_db()
+    imported_users = 0
+    imported_notes = 0
+    try:
+        # Ensure users exist (import missing ones, skip existing usernames)
+        for u in users_data:
+            if not u.get('username') or not u.get('password_hash'):
+                continue
+            try:
+                conn.execute(
+                    'INSERT INTO users (username, full_name, email, password_hash, role) '
+                    'VALUES (?, ?, ?, ?, ?)',
+                    (u['username'], u.get('full_name', ''), u.get('email', ''),
+                     u['password_hash'], u.get('role', 'user'))
+                )
+                imported_users += 1
+            except sqlite3.IntegrityError:
+                pass
+        # Map old user IDs → current IDs via username
+        old_id_to_username = {u['id']: u['username'] for u in users_data if 'id' in u}
+        for n in notes_data:
+            text = n.get('text', '')
+            if not text:
+                continue
+            uid = None
+            old_uid = n.get('user_id')
+            if old_uid and old_uid in old_id_to_username:
+                row = conn.execute(
+                    'SELECT id FROM users WHERE username = ?',
+                    (old_id_to_username[old_uid],)
+                ).fetchone()
+                if row:
+                    uid = row['id']
+            conn.execute(
+                'INSERT INTO notes (user_id, text, created_at, is_pinned, is_archived, is_public) '
+                'VALUES (?, ?, ?, ?, ?, ?)',
+                (uid, text,
+                 n.get('created_at') or datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                 n.get('is_pinned', 0), n.get('is_archived', 0), n.get('is_public', 0))
+            )
+            note_id = conn.execute('SELECT last_insert_rowid()').fetchone()[0]
+            if n.get('tags'):
+                save_tags_for_note(conn, note_id, n['tags'])
+            imported_notes += 1
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': str(e)}), 500
+    conn.close()
+    return jsonify({'ok': True, 'imported_notes': imported_notes, 'imported_users': imported_users})
 
 
 if __name__ == '__main__':

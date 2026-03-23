@@ -7,9 +7,14 @@ services:
       - "5000:5000"
     volumes:
       - notes_data:/data
+      # Zálohy: namapuj cestu na NASu na /backup uvnitř kontejneru
+      # Například: /volume1/backup/notes-app:/backup
+      - /volume1/backup/notes-app:/backup
     environment:
       - DB_PATH=/data/notes.db
       - SECRET_KEY=zmen-me-na-nejaky-tajny-retezec-minimalne-32-znaku
+      # BACKUP_DIR: složka pro automatické denní zálohy (cesta uvnitř kontejneru)
+      - BACKUP_DIR=/backup
 
 volumes:
   notes_data:
