@@ -294,33 +294,54 @@ def index():
 
 @app.route('/manifest.json')
 def manifest():
-    return jsonify({
+    from flask import Response
+    import json
+    data = {
+        "id": "/",
         "name": "Poznámky",
         "short_name": "Poznámky",
         "description": "Zápisky vždy po ruce",
         "start_url": "/",
+        "scope": "/",
         "display": "standalone",
         "background_color": "#f0f2f5",
         "theme_color": "#1a1a2e",
+        "orientation": "any",
         "icons": [
             {"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
             {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}
         ]
-    })
+    }
+    return Response(json.dumps(data), mimetype='application/manifest+json')
 
 
 @app.route('/service-worker.js')
 def service_worker():
     sw = """
-const CACHE = 'notes-v1';
-self.addEventListener('install', () => self.skipWaiting());
-self.addEventListener('activate', () => self.clients.claim());
+const CACHE = 'notes-v2';
+const OFFLINE_HTML = '<html><body style="font-family:sans-serif;padding:2rem;background:#f0f2f5"><h2>Jsi offline 📵</h2><p>Připoj se k internetu a zkus to znovu.</p></body></html>';
+
+self.addEventListener('install', e => {
+  e.waitUntil(
+    caches.open(CACHE).then(c => c.addAll(['/', '/manifest.json']))
+      .then(() => self.skipWaiting())
+  );
+});
+self.addEventListener('activate', e => {
+  e.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+    ).then(() => self.clients.claim())
+  );
+});
 self.addEventListener('fetch', e => {
   if (e.request.mode === 'navigate') {
-    e.respondWith(fetch(e.request).catch(() =>
-      new Response('<h2 style="font-family:sans-serif;padding:2rem">Jsi offline 📵</h2>',
-        {headers:{'Content-Type':'text/html'}})
-    ));
+    e.respondWith(
+      fetch(e.request)
+        .then(r => { const c = r.clone(); caches.open(CACHE).then(cache => cache.put(e.request, c)); return r; })
+        .catch(() => caches.match(e.request).then(r => r ||
+          new Response(OFFLINE_HTML, {headers:{'Content-Type':'text/html'}})))
+    );
   }
 });
 """
