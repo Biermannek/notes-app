@@ -268,6 +268,7 @@
     .share-dd-login{font-size:.75rem;color:#aaa}
     .share-error{font-size:.82rem;color:#ef4444;margin-top:.4rem;min-height:1.1em}
     .share-actions{display:flex;gap:.4rem;margin-top:.65rem}
+    .note-shared-banner{display:flex;align-items:center;gap:.4rem;font-size:.78rem;color:#7c3aed;font-weight:600;margin-bottom:.45rem;padding:.3rem .55rem;background:#f5f3ff;border-radius:6px}
 
     /* ── Responsive ── */
     @media(max-width:640px){
@@ -1184,19 +1185,23 @@ async function loadNotes() {
     const publicBanner = (!isOwnNote && isPublic && !isSharedUser)
       ? `<div class="note-public-banner">🌐 Veřejná poznámka · Zveřejnil: ${escAttr(n.owner_name || 'Neznámý uživatel')}</div>`
       : '';
-    // Shared badge (visible to owner + shared users)
+    // Shared banner — shown only to users who received the share (not the owner)
+    const sharedBanner = isSharedUser
+      ? `<div class="note-shared-banner">📋 Sdílená poznámka · Vlastník: ${escAttr(n.owner_name || 'Neznámý uživatel')}</div>`
+      : '';
+    // Shared badge (visible to logged-in owner + logged-in shared users only)
     const shareList = (n.shares || []);
-    const sharedBadge = shareList.length > 0
+    const sharedBadge = (shareList.length > 0 && currentUser)
       ? `<span class="note-shared-badge">👥 Sdílená
            <span class="share-tt">Sdíleno s: ${shareList.map(s => escAttr(s.full_name)).join(', ')}</span>
          </span>`
       : '';
-    // Visibility toggle btn (owner only)
-    const visBtn = (isOwnNote && !showArchived)
+    // Visibility toggle btn (logged-in owner only)
+    const visBtn = (isOwnNote && !showArchived && currentUser)
       ? `<button class="btn-visibility${isPublic ? ' public' : ''}" onclick="toggleVisibility(${n.id})" title="${isPublic ? 'Skrýt (učinit soukromou)' : 'Zveřejnit'}">${isPublic ? '🌐' : '🔒'}</button>`
       : '';
-    // Share btn (owner only)
-    const shareBtn = (isOwnNote && !showArchived)
+    // Share btn (logged-in owner only)
+    const shareBtn = (isOwnNote && !showArchived && currentUser)
       ? `<button class="btn-share" id="share-btn-${n.id}" onclick="startShare(${n.id})" title="Sdílet s uživateli">👥</button>`
       : '';
     // Action buttons
@@ -1221,8 +1226,8 @@ async function loadNotes() {
            </div>
          </div>`
       : '';
-    // Share panel (owner only, hidden by default)
-    const sharePanelHtml = (isOwnNote && !showArchived)
+    // Share panel (logged-in owner only, hidden by default)
+    const sharePanelHtml = (isOwnNote && !showArchived && currentUser)
       ? `<div class="share-panel" id="share-panel-${n.id}" style="display:none">
            <div class="share-panel-header">
              <span class="share-panel-title">👥 Sdílet s uživateli</span>
@@ -1241,7 +1246,7 @@ async function loadNotes() {
          </div>`
       : '';
     return `<div class="${noteClass}" id="note-${n.id}" data-text="${escAttr(n.text)}" data-shares="${escAttr(JSON.stringify(shareList))}">
-      ${publicBanner}
+      ${publicBanner}${sharedBanner}
       <div class="note-header">
         <div class="note-dates">
           <div class="note-meta">🕐 Vytvořeno: ${fmt(n.created_at)}</div>
