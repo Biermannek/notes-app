@@ -2822,8 +2822,7 @@ async function loadNotes() {
           return `<div class="reminder-row">
             <label>🔔 Připomínka:</label>
             <input type="datetime-local" class="reminder-input" id="reminder-input-${n.id}" value="${localVal}"/>
-            <button class="btn btn-save" onclick="saveReminder(${n.id})" style="padding:.3rem .7rem;font-size:.8rem">Nastavit</button>
-            ${n.reminder_at ? `<button class="btn-clear-reminder" onclick="clearReminder(${n.id})">✕ Zrušit</button>` : ''}
+            ${n.reminder_at ? `<button class="btn-clear-reminder" onclick="clearReminder(${n.id})" title="Zrušit připomínku">✕ Zrušit</button>` : ''}
           </div>`;
         })()
       : '';
@@ -3003,15 +3002,30 @@ async function saveEdit(id) {
   const tagsGetter = window[`getTags_editTagInput${id}`];
   const body = { text };
   if (tagsGetter) body.tags = tagsGetter();  // only send tags if owner (getter exists)
-  const res  = await fetch(`/api/notes/${id}`, {
+  const res = await fetch(`/api/notes/${id}`, {
     method: 'PUT', headers: {'Content-Type':'application/json'},
     body: JSON.stringify(body)
   });
-  if (res.ok) {
-    if (editingNoteId === id) editingNoteId = null;
-    await Promise.all([loadNotes(), loadAllTags()]);
-    showToast('✓ Poznámka upravena');
-  } else showToast('Chyba při ukládání!');
+  if (!res.ok) { showToast('Chyba při ukládání!'); return; }
+  // Save reminder if picker exists (owner only)
+  const reminderInp = document.getElementById(`reminder-input-${id}`);
+  if (reminderInp) {
+    const localVal = reminderInp.value;
+    let reminder_at = null;
+    if (localVal) {
+      const dt = new Date(localVal);
+      if (!isNaN(dt.getTime())) {
+        reminder_at = dt.toISOString().slice(0, 19).replace('T', ' ');
+      }
+    }
+    await fetch(`/api/notes/${id}/reminder`, {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ reminder_at })
+    });
+  }
+  if (editingNoteId === id) editingNoteId = null;
+  await Promise.all([loadNotes(), loadAllTags()]);
+  showToast('✓ Poznámka upravena');
 }
 
 // WYSIWYG new note
