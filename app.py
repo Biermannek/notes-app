@@ -331,6 +331,11 @@ def init_db():
         conn.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'")
     except sqlite3.OperationalError:
         pass
+    # Migrace — timezone uživatele
+    try:
+        conn.execute("ALTER TABLE user_settings ADD COLUMN timezone TEXT NOT NULL DEFAULT 'UTC'")
+    except sqlite3.OperationalError:
+        pass
     # Auto-promote teplanm na admin (idempotentní)
     conn.execute("UPDATE users SET role = 'admin' WHERE username = 'teplanm'")
     conn.commit()
@@ -397,13 +402,17 @@ def check_note_access(conn, note_id):
 def get_user_settings(conn, uid):
     """Returns settings dict for user. Returns defaults if no row or no uid."""
     if not uid:
-        return {'show_public_notes': 1, 'accept_shares': 1}
+        return {'show_public_notes': 1, 'accept_shares': 1, 'timezone': 'UTC'}
     row = conn.execute(
-        'SELECT show_public_notes, accept_shares FROM user_settings WHERE user_id = ?', (uid,)
+        'SELECT show_public_notes, accept_shares, timezone FROM user_settings WHERE user_id = ?', (uid,)
     ).fetchone()
     if row:
-        return {'show_public_notes': row['show_public_notes'], 'accept_shares': row['accept_shares']}
-    return {'show_public_notes': 1, 'accept_shares': 1}
+        return {
+            'show_public_notes': row['show_public_notes'],
+            'accept_shares':     row['accept_shares'],
+            'timezone':          row['timezone'] or 'UTC',
+        }
+    return {'show_public_notes': 1, 'accept_shares': 1, 'timezone': 'UTC'}
 
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
@@ -1060,17 +1069,25 @@ def api_update_settings():
     data         = request.get_json() or {}
     show_public  = 1 if data.get('show_public_notes', True) else 0
     accept_share = 1 if data.get('accept_shares',     True) else 0
+    timezone     = str(data.get('timezone', 'UTC') or 'UTC').strip()
+    # Validate IANA timezone
+    try:
+        from zoneinfo import ZoneInfo
+        ZoneInfo(timezone)
+    except Exception:
+        return jsonify({'error': f'Neplatná časová zóna: {timezone}'}), 400
     conn = get_db()
     conn.execute(
-        'INSERT INTO user_settings (user_id, show_public_notes, accept_shares) VALUES (?, ?, ?) '
+        'INSERT INTO user_settings (user_id, show_public_notes, accept_shares, timezone) VALUES (?, ?, ?, ?) '
         'ON CONFLICT(user_id) DO UPDATE SET '
         'show_public_notes = excluded.show_public_notes, '
-        'accept_shares     = excluded.accept_shares',
-        (uid, show_public, accept_share)
+        'accept_shares     = excluded.accept_shares, '
+        'timezone          = excluded.timezone',
+        (uid, show_public, accept_share, timezone)
     )
     conn.commit()
     conn.close()
-    return jsonify({'show_public_notes': show_public, 'accept_shares': accept_share})
+    return jsonify({'show_public_notes': show_public, 'accept_shares': accept_share, 'timezone': timezone})
 
 
 @app.route('/api/stats/daily', methods=['GET'])
@@ -1163,9 +1180,11 @@ def admin_get_users():
     conn = get_db()
     rows = conn.execute('''
         SELECT u.id, u.username, u.full_name, u.email, u.role, u.created_at,
-               COUNT(n.id) AS note_count
+               COUNT(n.id) AS note_count,
+               COALESCE(s.timezone, 'UTC') AS timezone
         FROM users u
         LEFT JOIN notes n ON n.user_id = u.id
+        LEFT JOIN user_settings s ON s.user_id = u.id
         GROUP BY u.id
         ORDER BY u.created_at ASC
     ''').fetchall()

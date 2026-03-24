@@ -353,6 +353,8 @@
     .settings-label{flex:1}
     .settings-title{font-weight:600;font-size:.95rem;color:#1a1a2e;margin-bottom:.25rem}
     .settings-desc{font-size:.8rem;color:#888;line-height:1.4}
+    .settings-select{padding:.4rem .65rem;border:1.5px solid #e0e0e0;border-radius:8px;font-size:.88rem;font-family:inherit;color:#333;background:#fff;cursor:pointer;transition:border-color .2s;max-width:240px}
+    .settings-select:focus{outline:none;border-color:#6c63ff}
     .settings-dirty-bar{display:none;align-items:center;gap:.75rem;background:#fef3c7;border:1.5px solid #f59e0b;border-radius:10px;padding:.65rem 1rem;margin-bottom:1rem;font-size:.85rem;font-weight:600;color:#92400e;flex-wrap:wrap}
     .settings-dirty-bar.visible{display:flex}
     .btn-save-dirty{padding:.3rem .75rem;border:none;border-radius:6px;background:#f59e0b;color:#fff;font-size:.82rem;font-weight:600;cursor:pointer;transition:background .15s}
@@ -704,6 +706,76 @@
           </div>
         </div>
 
+        <div class="settings-row">
+          <div class="settings-label">
+            <div class="settings-title">Časová zóna</div>
+            <div class="settings-desc">Časy vytvoření a editace jsou uloženy v UTC. Zvolte svou časovou zónu pro správné zobrazení.</div>
+          </div>
+          <select class="settings-select" id="set-timezone" onchange="onTimezoneChange()">
+            <option value="UTC">UTC</option>
+            <optgroup label="Evropa">
+              <option value="Europe/Prague">Europe/Prague (Praha, Bratislava, Berlín)</option>
+              <option value="Europe/London">Europe/London (Londýn, Dublin)</option>
+              <option value="Europe/Lisbon">Europe/Lisbon (Lisabon)</option>
+              <option value="Europe/Paris">Europe/Paris (Paříž, Brusel)</option>
+              <option value="Europe/Berlin">Europe/Berlin (Berlín, Vídeň)</option>
+              <option value="Europe/Warsaw">Europe/Warsaw (Varšava)</option>
+              <option value="Europe/Budapest">Europe/Budapest (Budapešť)</option>
+              <option value="Europe/Zurich">Europe/Zurich (Curych, Bern)</option>
+              <option value="Europe/Amsterdam">Europe/Amsterdam</option>
+              <option value="Europe/Rome">Europe/Rome (Řím, Madrid)</option>
+              <option value="Europe/Stockholm">Europe/Stockholm (Stockholm, Oslo)</option>
+              <option value="Europe/Helsinki">Europe/Helsinki (Helsinky, Tallinn)</option>
+              <option value="Europe/Riga">Europe/Riga (Riga, Vilnius)</option>
+              <option value="Europe/Bucharest">Europe/Bucharest (Bukurešť, Athény)</option>
+              <option value="Europe/Sofia">Europe/Sofia (Sofie)</option>
+              <option value="Europe/Kiev">Europe/Kiev (Kyjev)</option>
+              <option value="Europe/Minsk">Europe/Minsk (Minsk)</option>
+              <option value="Europe/Moscow">Europe/Moscow (Moskva)</option>
+              <option value="Europe/Istanbul">Europe/Istanbul (Istanbul)</option>
+            </optgroup>
+            <optgroup label="Asie &amp; Blízký východ">
+              <option value="Asia/Dubai">Asia/Dubai (Dubaj, UTC+4)</option>
+              <option value="Asia/Karachi">Asia/Karachi (Karáčí, UTC+5)</option>
+              <option value="Asia/Kolkata">Asia/Kolkata (Indie, UTC+5:30)</option>
+              <option value="Asia/Dhaka">Asia/Dhaka (Dháka, UTC+6)</option>
+              <option value="Asia/Bangkok">Asia/Bangkok (Bangkok, UTC+7)</option>
+              <option value="Asia/Singapore">Asia/Singapore (Singapur, UTC+8)</option>
+              <option value="Asia/Shanghai">Asia/Shanghai (Čína, UTC+8)</option>
+              <option value="Asia/Tokyo">Asia/Tokyo (Tokio, UTC+9)</option>
+              <option value="Asia/Seoul">Asia/Seoul (Soul, UTC+9)</option>
+            </optgroup>
+            <optgroup label="Afrika">
+              <option value="Africa/Cairo">Africa/Cairo (Káhira, UTC+2)</option>
+              <option value="Africa/Nairobi">Africa/Nairobi (Nairobi, UTC+3)</option>
+              <option value="Africa/Johannesburg">Africa/Johannesburg (UTC+2)</option>
+              <option value="Africa/Lagos">Africa/Lagos (Lagos, UTC+1)</option>
+            </optgroup>
+            <optgroup label="Amerika">
+              <option value="America/New_York">America/New_York (New York, UTC-5/-4)</option>
+              <option value="America/Chicago">America/Chicago (Chicago, UTC-6/-5)</option>
+              <option value="America/Denver">America/Denver (Denver, UTC-7/-6)</option>
+              <option value="America/Los_Angeles">America/Los_Angeles (Los Angeles, UTC-8/-7)</option>
+              <option value="America/Anchorage">America/Anchorage (UTC-9/-8)</option>
+              <option value="America/Phoenix">America/Phoenix (Phoenix, UTC-7)</option>
+              <option value="America/Toronto">America/Toronto (Toronto)</option>
+              <option value="America/Vancouver">America/Vancouver (Vancouver)</option>
+              <option value="America/Mexico_City">America/Mexico_City (Mexico City)</option>
+              <option value="America/Bogota">America/Bogota (Bogotá, UTC-5)</option>
+              <option value="America/Sao_Paulo">America/Sao_Paulo (São Paulo)</option>
+              <option value="America/Argentina/Buenos_Aires">America/Argentina/Buenos_Aires</option>
+              <option value="America/Santiago">America/Santiago (Santiago)</option>
+            </optgroup>
+            <optgroup label="Pacifik &amp; Austrálie">
+              <option value="Australia/Sydney">Australia/Sydney (Sydney, UTC+10/+11)</option>
+              <option value="Australia/Perth">Australia/Perth (Perth, UTC+8)</option>
+              <option value="Pacific/Auckland">Pacific/Auckland (Auckland, UTC+12/+13)</option>
+              <option value="Pacific/Fiji">Pacific/Fiji (Fidži, UTC+12)</option>
+              <option value="Pacific/Honolulu">Pacific/Honolulu (Honolulu, UTC-10)</option>
+            </optgroup>
+          </select>
+        </div>
+
       </div>
       <div style="display:flex;align-items:center;gap:.75rem;margin-top:1.5rem">
         <button class="btn btn-primary" style="margin-top:0" onclick="saveSettings()">💾 Uložit nastavení</button>
@@ -726,6 +798,7 @@
               <th data-col="email" onclick="sortAdminUsers('email')">E-mail<span class="sort-arrow">↕</span></th>
               <th data-col="role" onclick="sortAdminUsers('role')">Role<span class="sort-arrow">↕</span></th>
               <th data-col="created_at" onclick="sortAdminUsers('created_at')">Registrace<span class="sort-arrow">↕</span></th>
+              <th data-col="timezone" onclick="sortAdminUsers('timezone')">Časová zóna<span class="sort-arrow">↕</span></th>
               <th data-col="note_count" class="col-num" onclick="sortAdminUsers('note_count')">Poznámky<span class="sort-arrow">↕</span></th>
             </tr>
           </thead>
@@ -897,7 +970,7 @@ let searchQuery     = '';
 let searchDebounce  = null;
 let currentOrder    = 'desc';
 // Settings state
-let currentSettings = { show_public_notes: 1, accept_shares: 1 };
+let currentSettings = { show_public_notes: 1, accept_shares: 1, timezone: 'UTC' };
 let settingsDirty   = false;
 let pendingNavPage  = null;
 let currentStatType = 'created';
@@ -1121,8 +1194,28 @@ function renderSettingsUI() {
   spN.classList.toggle('active', currentSettings.show_public_notes == 0);
   asY.classList.toggle('active', currentSettings.accept_shares == 1);
   asN.classList.toggle('active', currentSettings.accept_shares == 0);
+  const tzSel = document.getElementById('set-timezone');
+  if (tzSel) {
+    const tz = currentSettings.timezone || 'UTC';
+    // Try to set the select to the saved value; if not in list, add a custom option
+    const exists = Array.from(tzSel.options).some(o => o.value === tz);
+    if (!exists) {
+      const opt = document.createElement('option');
+      opt.value = tz; opt.textContent = tz;
+      tzSel.insertBefore(opt, tzSel.firstChild);
+    }
+    tzSel.value = tz;
+  }
   const bar = document.getElementById('settingsDirtyBar');
   if (bar) bar.classList.toggle('visible', settingsDirty);
+}
+function onTimezoneChange() {
+  const tzSel = document.getElementById('set-timezone');
+  if (tzSel) {
+    currentSettings.timezone = tzSel.value;
+    settingsDirty = true;
+    renderSettingsUI();
+  }
 }
 function setSettingToggle(key, value) {
   currentSettings[key] = value;
@@ -1231,7 +1324,7 @@ async function loadBackupStatus() {
     if (d.backups && d.backups.length) {
       fileSection.style.display = 'block';
       fileList.innerHTML = d.backups.map(f => {
-        const createdAt  = f.created_at  || '—';
+        const createdAt  = f.created_at ? fmt(f.created_at) : '—';
         const createdBy  = f.created_by  || '—';
         const userCount  = f.user_count  != null ? f.user_count  : '—';
         const noteCount  = f.note_count  != null ? f.note_count  : '—';
@@ -1360,14 +1453,14 @@ let _adminUsersSort = { col: null, dir: null }; // dir: null | 'asc' | 'desc'
 async function loadAdminUsers() {
   const tbody = document.getElementById('adminUsersTable');
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#aaa;padding:1.5rem">Načítám…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#aaa;padding:1.5rem">Načítám…</td></tr>';
   try {
     const r = await fetch('/api/admin/users');
-    if (!r.ok) { tbody.innerHTML = '<tr><td colspan="6" style="color:#e53e3e;padding:1rem">Chyba načtení uživatelů.</td></tr>'; return; }
+    if (!r.ok) { tbody.innerHTML = '<tr><td colspan="7" style="color:#e53e3e;padding:1rem">Chyba načtení uživatelů.</td></tr>'; return; }
     _adminUsersData = await r.json();
     renderAdminUsersTable();
   } catch(e) {
-    tbody.innerHTML = '<tr><td colspan="6" style="color:#e53e3e;padding:1rem">Chyba spojení.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="color:#e53e3e;padding:1rem">Chyba spojení.</td></tr>';
   }
 }
 
@@ -1405,7 +1498,7 @@ function renderAdminUsersTable() {
   }
 
   if (!_adminUsersData.length) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#aaa;padding:1.5rem">Žádní uživatelé</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#aaa;padding:1.5rem">Žádní uživatelé</td></tr>';
     return;
   }
 
@@ -1426,13 +1519,15 @@ function renderAdminUsersTable() {
     const badge = u.role === 'admin'
       ? `<span class="user-role-badge admin">admin</span>`
       : `<span class="user-role-badge user">uživatel</span>`;
-    const created = u.created_at ? u.created_at.slice(0, 10) : '—';
+    const created = u.created_at ? fmt(u.created_at) : '—';
+    const tz = u.timezone || 'UTC';
     return `<tr>
       <td>${escHtml(u.full_name)}</td>
       <td style="font-family:monospace;color:#555">${escHtml(u.username)}</td>
       <td style="color:#555">${escHtml(u.email || '—')}</td>
       <td>${badge}</td>
       <td style="color:#888;font-size:.84rem">${created}</td>
+      <td style="color:#888;font-size:.84rem;font-family:monospace">${escHtml(tz)}</td>
       <td class="col-num">${u.note_count ?? 0}</td>
     </tr>`;
   }).join('');
@@ -2631,8 +2726,22 @@ function _getEditContent(id) {
 // ── Helpers ────────────────────────────────────────────────────────────────
 function fmt(str) {
   if (!str) return '—';
-  const d = new Date(str.includes('T') ? str : str.replace(' ','T'));
-  return d.toLocaleString('cs-CZ',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  // SQLite stores UTC without timezone marker — append Z so Date() parses it correctly
+  const iso = str.includes('T') ? str : str.replace(' ', 'T');
+  const utcIso = (iso.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(iso)) ? iso : iso + 'Z';
+  const tz = (currentSettings && currentSettings.timezone) || 'UTC';
+  try {
+    const d = new Date(utcIso);
+    return d.toLocaleString('cs-CZ', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+      timeZone: tz
+    });
+  } catch(e) {
+    // Fallback if timezone is invalid
+    const d = new Date(utcIso);
+    return d.toLocaleString('cs-CZ', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  }
 }
 function esc(t) { return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function showToast(msg) {
