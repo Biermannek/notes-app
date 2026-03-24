@@ -298,11 +298,17 @@
     .btn-backup.secondary:hover:not(:disabled){background:#e0e2e8}
     .btn-backup.danger{background:#fee2e2;color:#991b1b}
     .btn-backup.danger:hover:not(:disabled){background:#fecaca}
-    .backup-file-list{max-height:220px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:10px;font-size:.82rem}
-    .backup-file-row{display:flex;justify-content:space-between;align-items:center;padding:.5rem .85rem;border-bottom:1px solid #f0f2f5;color:#444}
-    .backup-file-row:last-child{border-bottom:none}
-    .backup-file-name{font-family:monospace;font-size:.8rem}
-    .backup-file-size{color:#aaa;white-space:nowrap;margin-left:.5rem}
+    .backup-table-wrap{max-height:260px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:10px;font-size:.8rem}
+    .backup-table{width:100%;border-collapse:collapse}
+    .backup-table thead th{position:sticky;top:0;background:#f8f9fb;font-weight:600;color:#555;font-size:.77rem;padding:.45rem .7rem;text-align:left;border-bottom:1.5px solid #e0e0e0;white-space:nowrap}
+    .backup-table tbody tr{border-bottom:1px solid #f0f2f5;color:#444}
+    .backup-table tbody tr:last-child{border-bottom:none}
+    .backup-table tbody tr:hover{background:#fafafa}
+    .backup-table td{padding:.42rem .7rem;vertical-align:middle;white-space:nowrap}
+    .backup-table td.col-name{font-family:monospace;font-size:.77rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .backup-table td.col-num{text-align:right;color:#666}
+    .backup-table td.col-size{text-align:right;color:#aaa}
+    .backup-table td.col-action{text-align:center}
     .backup-msg{font-size:.84rem;margin-top:.5rem;min-height:1.2em}
     .backup-msg.ok{color:#10b981}
     .backup-msg.err{color:#ef4444}
@@ -728,7 +734,23 @@
       <!-- Seznam souborů -->
       <div id="backupFileSection" style="display:none">
         <div style="font-size:.88rem;font-weight:600;color:#444;margin-bottom:.5rem">Uložené zálohy na NASu</div>
-        <div class="backup-file-list" id="backupFileList"></div>
+        <div class="backup-table-wrap">
+          <table class="backup-table">
+            <thead>
+              <tr>
+                <th>Název zálohy</th>
+                <th>Kdy vznikla</th>
+                <th>Kdo vytvořil</th>
+                <th class="col-num">Uživatelé</th>
+                <th class="col-num">Poznámky</th>
+                <th>Verze</th>
+                <th class="col-size">Velikost</th>
+                <th class="col-action"></th>
+              </tr>
+            </thead>
+            <tbody id="backupFileList"></tbody>
+          </table>
+        </div>
       </div>
       <div class="backup-msg" id="backupMsg"></div>
     </div>
@@ -1105,27 +1127,29 @@ async function loadBackupStatus() {
     document.getElementById('btnBackupNow').disabled = !d.enabled;
     // Apply schedule config to UI
     if (d.config) applyScheduleToUI(d.config);
-    // File list with metadata
+    // File list with metadata — rendered as table rows
     const fileSection = document.getElementById('backupFileSection');
     const fileList    = document.getElementById('backupFileList');
     if (d.backups && d.backups.length) {
       fileSection.style.display = 'block';
       fileList.innerHTML = d.backups.map(f => {
-        const meta = [
-          f.user_count != null ? `👤 ${f.user_count} už.` : null,
-          f.note_count != null ? `📝 ${f.note_count} pozn.` : null,
-          f.version    ? `v${f.version}` : null,
-        ].filter(Boolean).join('  ·  ');
-        return `<div class="backup-file-row">
-          <div>
-            <div class="backup-file-name">${f.name}</div>
-            ${meta ? `<div class="backup-file-meta">${meta}</div>` : ''}
-          </div>
-          <div style="display:flex;align-items:center;gap:.5rem;flex-shrink:0">
-            <span class="backup-file-size">${f.size_kb} KB</span>
-            <button class="btn-restore" onclick="startRestore('${f.name}')">↩ Obnovit</button>
-          </div>
-        </div>`;
+        const createdAt  = f.created_at  || '—';
+        const createdBy  = f.created_by  || '—';
+        const userCount  = f.user_count  != null ? f.user_count  : '—';
+        const noteCount  = f.note_count  != null ? f.note_count  : '—';
+        const version    = f.version     ? `v${f.version}` : '—';
+        const sizeTxt    = f.size_kb     != null ? `${f.size_kb} KB` : '—';
+        const safeName   = f.name.replace(/'/g, "\\'");
+        return `<tr>
+          <td class="col-name" title="${f.name}">${f.name}</td>
+          <td>${createdAt}</td>
+          <td>${createdBy}</td>
+          <td class="col-num">${userCount}</td>
+          <td class="col-num">${noteCount}</td>
+          <td>${version}</td>
+          <td class="col-size">${sizeTxt}</td>
+          <td class="col-action"><button class="btn-restore" onclick="startRestore('${safeName}')">↩ Obnovit</button></td>
+        </tr>`;
       }).join('');
     } else {
       fileSection.style.display = 'none';

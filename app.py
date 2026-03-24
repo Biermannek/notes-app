@@ -17,6 +17,8 @@ DB_PATH        = os.environ.get('DB_PATH',    '/data/notes.db')
 BACKUP_DIR         = os.environ.get('BACKUP_DIR', '')
 BACKUP_STATE       = '/data/.last_backup'
 BACKUP_CONFIG_PATH = '/data/backup_config.json'
+_SCHEDULER_LOCK_FD = None   # kept alive so flock stays held
+_BACKUP_THREAD_LOCK = threading.Lock()  # prevents concurrent backups
 
 _DEFAULT_CONFIG = {
     'frequency':    'daily',   # hourly | daily | weekly | monthly
@@ -58,11 +60,20 @@ def _db_counts():
         return 0, 0
 
 
-def do_db_backup():
+def do_db_backup(created_by='automatická'):
     """Copy current SQLite DB to BACKUP_DIR. Creates a .meta.json sidecar with statistics.
     Returns (True, filepath) on success, (False, error_message) on failure.
     Retains the 30 most recent backups.
     """
+    if not _BACKUP_THREAD_LOCK.acquire(blocking=False):
+        return False, 'Záloha již probíhá'
+    try:
+        return _do_db_backup_inner(created_by)
+    finally:
+        _BACKUP_THREAD_LOCK.release()
+
+
+def _do_db_backup_inner(created_by):
     bd = BACKUP_DIR
     if not bd:
         return False, 'BACKUP_DIR není nastaven'
@@ -79,11 +90,12 @@ def do_db_backup():
         # Metadata sidecar
         uc, nc = _db_counts()
         meta = {
-            'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'version':    __version__,
-            'user_count': uc,
-            'note_count': nc,
-            'db_size_kb': round(os.path.getsize(dst) / 1024, 1),
+            'created_at':  datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'created_by':  created_by,
+            'version':     __version__,
+            'user_count':  uc,
+            'note_count':  nc,
+            'db_size_kb':  round(os.path.getsize(dst) / 1024, 1),
         }
         with open(dst.replace('.db', '.meta.json'), 'w') as f:
             json.dump(meta, f)
@@ -145,7 +157,12 @@ def _get_last_backup():
 
 
 def should_backup_now(cfg):
-    """Returns True if a backup should run right now according to the schedule."""
+    """Returns True if a backup is due right now according to the schedule.
+
+    Strategy: "has the scheduled moment already passed since the last backup?"
+    This is robust against missed wakeups and app restarts — if the scheduler
+    wakes up a few seconds or even minutes after the target time it still fires.
+    """
     now  = datetime.now()
     freq = cfg.get('frequency', 'daily')
     last_str = _get_last_backup()
@@ -158,11 +175,12 @@ def should_backup_now(cfg):
 
     if freq == 'hourly':
         target_min = int(cfg.get('minute', 0))
-        if now.minute != target_min:
-            return False
-        # Already ran this hour?
-        if last and last.year == now.year and last.month == now.month \
-                and last.day == now.day and last.hour == now.hour:
+        # Build the target timestamp for the CURRENT hour
+        due = now.replace(minute=target_min, second=0, microsecond=0)
+        if now < due:
+            return False   # target minute hasn't arrived yet this hour
+        # Already backed up at or after this hour's due time?
+        if last and last >= due and last.date() == now.date() and last.hour == now.hour:
             return False
         return True
 
@@ -173,28 +191,36 @@ def should_backup_now(cfg):
         h, m = 2, 0
 
     if freq == 'daily':
-        if now.hour != h or now.minute != m:
-            return False
-        if last and last.date() == now.date():
-            return False
+        due = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        if now < due:
+            return False   # not yet today
+        if last and last.date() == now.date() and last >= due:
+            return False   # already ran today
         return True
 
     if freq == 'weekly':
         target_wd = int(cfg.get('weekday', 0))
-        if now.weekday() != target_wd or now.hour != h or now.minute != m:
+        if now.weekday() != target_wd:
             return False
-        iso_now  = now.isocalendar()
-        iso_last = last.isocalendar() if last else None
-        if iso_last and iso_last[0] == iso_now[0] and iso_last[1] == iso_now[1]:
+        due = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        if now < due:
             return False
+        if last:
+            iso_now  = now.isocalendar()
+            iso_last = last.isocalendar()
+            if iso_last[0] == iso_now[0] and iso_last[1] == iso_now[1]:
+                return False   # already ran this week
         return True
 
     if freq == 'monthly':
         target_day = int(cfg.get('day_of_month', 1))
-        if now.day != target_day or now.hour != h or now.minute != m:
+        if now.day != target_day:
+            return False
+        due = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        if now < due:
             return False
         if last and last.year == now.year and last.month == now.month:
-            return False
+            return False   # already ran this month
         return True
 
     return False
@@ -214,16 +240,23 @@ def _backup_loop():
 
 
 def start_backup_scheduler():
-    """Start backup background thread. File lock ensures only one Gunicorn worker runs it."""
+    """Start backup background thread. File lock ensures only one Gunicorn worker runs it.
+    _SCHEDULER_LOCK_FD is kept as a module-level global so the OS lock stays held
+    for the lifetime of the process (prevents GC-triggered early release).
+    """
+    global _SCHEDULER_LOCK_FD
     lock_path = '/data/.scheduler.lock'
     try:
         os.makedirs('/data', exist_ok=True)
         fd = open(lock_path, 'w')
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _SCHEDULER_LOCK_FD = fd   # keep alive — must NOT be garbage-collected
         threading.Thread(target=_backup_loop, daemon=True).start()
-        app.logger.info('Backup scheduler started')
+        app.logger.info('Backup scheduler started (this worker owns the lock)')
     except IOError:
-        pass  # jiný worker již běží
+        app.logger.info('Backup scheduler: lock held by another worker, skipping')
+    except Exception as e:
+        app.logger.error(f'Backup scheduler start failed: {e}')
 
 
 def get_db():
@@ -1119,6 +1152,7 @@ def backup_status():
                 'user_count': meta.get('user_count'),
                 'note_count': meta.get('note_count'),
                 'created_at': meta.get('created_at'),
+                'created_by': meta.get('created_by', '—'),
                 'version':    meta.get('version'),
             })
     return jsonify({
@@ -1155,7 +1189,16 @@ def backup_put_config():
 def backup_trigger():
     if not is_admin():
         return jsonify({'error': 'Přístup odepřen'}), 403
-    ok, msg = do_db_backup()
+    # Resolve full name of the currently logged-in admin user
+    uid = current_user_id()
+    created_by = 'manuální'
+    if uid:
+        conn = get_db()
+        row = conn.execute('SELECT full_name FROM users WHERE id = ?', (uid,)).fetchone()
+        conn.close()
+        if row and row['full_name']:
+            created_by = row['full_name']
+    ok, msg = do_db_backup(created_by=created_by)
     if ok:
         return jsonify({'ok': True, 'file': os.path.basename(msg)})
     return jsonify({'ok': False, 'error': msg}), 500
