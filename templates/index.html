@@ -218,11 +218,21 @@
 
     /* ── Topbar (user info / login button) ── */
     .topbar{display:flex;justify-content:flex-end;align-items:center;padding:.4rem 0 .75rem;margin-bottom:.25rem;min-height:2.25rem;gap:.75rem}
-    .topbar-user{display:flex;align-items:center;gap:.6rem}
+    .topbar-user{position:relative;display:flex;align-items:center;gap:.6rem}
     .topbar-avatar{width:1.8rem;height:1.8rem;border-radius:50%;background:#6c63ff;color:#fff;display:flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:700;flex-shrink:0}
     .topbar-username{font-weight:600;color:#1a1a2e;font-size:.88rem}
-    .btn-logout{padding:.3rem .75rem;border:1.5px solid #e0e0e0;border-radius:8px;background:#fff;color:#777;font-size:.8rem;font-weight:600;cursor:pointer;transition:all .15s}
-    .btn-logout:hover{border-color:#f87171;color:#f87171}
+    /* ── User menu trigger ── */
+    .user-menu-trigger{display:flex;align-items:center;gap:.6rem;cursor:pointer;padding:.25rem .5rem;border-radius:10px;transition:background .15s;user-select:none;-webkit-tap-highlight-color:transparent}
+    .user-menu-trigger:hover,.user-menu-trigger.open{background:rgba(108,99,255,.08)}
+    .user-menu-caret{font-size:.65rem;color:#aaa;margin-left:.1rem;transition:transform .18s}
+    .user-menu-trigger.open .user-menu-caret{transform:rotate(180deg)}
+    /* ── User dropdown ── */
+    .user-dropdown{position:absolute;top:calc(100% + .4rem);right:0;min-width:170px;background:#fff;border:1px solid #e8e8e8;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.1);padding:.35rem;z-index:200;opacity:0;transform:translateY(-6px) scale(.97);pointer-events:none;transition:opacity .18s,transform .18s}
+    .user-dropdown.open{opacity:1;transform:translateY(0) scale(1);pointer-events:auto}
+    .user-dropdown-item{display:flex;align-items:center;gap:.6rem;padding:.55rem .75rem;border-radius:8px;font-size:.85rem;font-weight:500;color:#333;cursor:pointer;transition:background .13s;white-space:nowrap}
+    .user-dropdown-item:hover{background:#f5f3ff;color:#6c63ff}
+    .user-dropdown-item.danger:hover{background:#fff1f2;color:#e11d48}
+    .user-dropdown-sep{height:1px;background:#f0f0f0;margin:.3rem .4rem}
     .btn-login-top{padding:.35rem .85rem;border:none;border-radius:8px;background:#6c63ff;color:#fff;font-size:.82rem;font-weight:600;cursor:pointer;transition:background .15s}
     .btn-login-top:hover{background:#5a52d5}
 
@@ -397,9 +407,16 @@
   <!-- Topbar: user info / login -->
   <div id="topbar" class="topbar">
     <div id="topbarUser" class="topbar-user" style="display:none">
-      <div class="topbar-avatar" id="topbarInitials"></div>
-      <span class="topbar-username" id="topbarName"></span>
-      <button class="btn-logout" onclick="doLogout()">Odhlásit se</button>
+      <div class="user-menu-trigger" id="userMenuTrigger" onclick="toggleUserMenu()" onblur="closeUserMenuDelayed()">
+        <div class="topbar-avatar" id="topbarInitials"></div>
+        <span class="topbar-username" id="topbarName"></span>
+        <span class="user-menu-caret">▼</span>
+      </div>
+      <div class="user-dropdown" id="userDropdown">
+        <div class="user-dropdown-item" onclick="openChangePassword()">🔑 Změnit heslo</div>
+        <div class="user-dropdown-sep"></div>
+        <div class="user-dropdown-item danger" onclick="doLogout()">🚪 Odhlásit se</div>
+      </div>
     </div>
     <button id="topbarLoginBtn" class="btn-login-top" onclick="showPage('login')" style="display:none">🔐 Přihlásit se</button>
   </div>
@@ -757,6 +774,32 @@
   </div>
 
 </main>
+
+<!-- Modal: změna hesla -->
+<div class="modal-overlay" id="changePwModal">
+  <div class="modal-box">
+    <div class="modal-title">🔑 Změna hesla</div>
+    <div class="modal-body" style="margin-top:.75rem">
+      <div class="auth-field" style="margin-bottom:.85rem">
+        <label for="cpOldPw">Původní heslo</label>
+        <input type="password" id="cpOldPw" placeholder="Zadejte současné heslo" autocomplete="current-password"/>
+      </div>
+      <div class="auth-field" style="margin-bottom:.85rem">
+        <label for="cpNewPw">Nové heslo</label>
+        <input type="password" id="cpNewPw" placeholder="Alespoň 6 znaků" autocomplete="new-password"/>
+      </div>
+      <div class="auth-field" style="margin-bottom:.85rem">
+        <label for="cpNewPw2">Nové heslo znovu</label>
+        <input type="password" id="cpNewPw2" placeholder="Zopakujte nové heslo" autocomplete="new-password"/>
+      </div>
+      <div id="cpError" class="auth-error"></div>
+    </div>
+    <div class="modal-actions" style="margin-top:1.25rem">
+      <button class="btn btn-primary" id="cpSubmitBtn" onclick="submitChangePassword()">Uložit nové heslo</button>
+      <button class="btn-modal-stay" onclick="closeChangePassword()">Zrušit</button>
+    </div>
+  </div>
+</div>
 
 <!-- Modal: obnova zálohy -->
 <div class="modal-overlay" id="restoreModal">
@@ -1401,6 +1444,7 @@ async function doRegister() {
 }
 
 async function doLogout() {
+  closeUserMenu();
   await fetch('/api/auth/logout', { method: 'POST' });
   currentUser = null;
   settingsDirty   = false;
@@ -1412,6 +1456,83 @@ async function doLogout() {
   await loadAllTags();
   await loadNotes();
   showToast('Odhlášení proběhlo úspěšně');
+}
+
+// ── User menu ──────────────────────────────────────────────────────────────
+function toggleUserMenu() {
+  const trigger  = document.getElementById('userMenuTrigger');
+  const dropdown = document.getElementById('userDropdown');
+  const isOpen   = dropdown.classList.contains('open');
+  if (isOpen) {
+    closeUserMenu();
+  } else {
+    trigger.classList.add('open');
+    dropdown.classList.add('open');
+    // Close when clicking anywhere outside
+    setTimeout(() => document.addEventListener('click', _userMenuOutsideClick, { once: true }), 0);
+  }
+}
+
+function closeUserMenu() {
+  document.getElementById('userMenuTrigger')?.classList.remove('open');
+  document.getElementById('userDropdown')?.classList.remove('open');
+}
+
+function closeUserMenuDelayed() {
+  // Used by onblur — small delay so item clicks can register first
+  setTimeout(closeUserMenu, 150);
+}
+
+function _userMenuOutsideClick(e) {
+  const trigger  = document.getElementById('userMenuTrigger');
+  if (trigger && !trigger.contains(e.target)) closeUserMenu();
+}
+
+// ── Change password ────────────────────────────────────────────────────────
+function openChangePassword() {
+  closeUserMenu();
+  ['cpOldPw','cpNewPw','cpNewPw2'].forEach(id => document.getElementById(id).value = '');
+  const err = document.getElementById('cpError');
+  err.classList.remove('visible'); err.textContent = '';
+  document.getElementById('cpSubmitBtn').disabled = false;
+  document.getElementById('changePwModal').classList.add('visible');
+  setTimeout(() => document.getElementById('cpOldPw').focus(), 80);
+}
+
+function closeChangePassword() {
+  document.getElementById('changePwModal').classList.remove('visible');
+}
+
+async function submitChangePassword() {
+  const oldPw  = document.getElementById('cpOldPw').value;
+  const newPw  = document.getElementById('cpNewPw').value;
+  const newPw2 = document.getElementById('cpNewPw2').value;
+  const errEl  = document.getElementById('cpError');
+  const btn    = document.getElementById('cpSubmitBtn');
+  const showErr = msg => { errEl.textContent = msg; errEl.classList.add('visible'); };
+  errEl.classList.remove('visible'); errEl.textContent = '';
+  // Client-side pre-check
+  if (!oldPw || !newPw || !newPw2) { showErr('Vyplňte prosím všechna pole.'); return; }
+  if (newPw !== newPw2)             { showErr('Nová hesla se neshodují.'); return; }
+  if (newPw.length < 6)            { showErr('Nové heslo musí mít alespoň 6 znaků.'); return; }
+  btn.disabled = true;
+  try {
+    const r    = await fetch('/api/auth/change-password', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ old_password: oldPw, new_password: newPw, new_password2: newPw2 })
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      showErr(data.error || 'Chyba při změně hesla.');
+      btn.disabled = false;
+      return;
+    }
+    closeChangePassword();
+    showToast('✅ Heslo bylo úspěšně změněno');
+  } catch(e) {
+    showErr('Chyba spojení se serverem.');
+    btn.disabled = false;
+  }
 }
 
 // ── Note visibility ────────────────────────────────────────────────────────
@@ -2408,6 +2529,22 @@ document.getElementById('searchInput').addEventListener('input', e => {
 });
 document.getElementById('searchInput').addEventListener('keydown', e => {
   if (e.key === 'Escape') clearSearch();
+});
+
+// ── Global Escape handler ────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (document.getElementById('changePwModal')?.classList.contains('visible')) {
+    closeChangePassword(); return;
+  }
+  if (document.getElementById('userDropdown')?.classList.contains('open')) {
+    closeUserMenu(); return;
+  }
+});
+
+// ── Password modal: Enter on last field submits ───────────────────────────────
+document.getElementById('cpNewPw2').addEventListener('keydown', e => {
+  if (e.key === 'Enter') submitChangePassword();
 });
 
 // ── Service Worker registrace ───────────────────────────────────────────────

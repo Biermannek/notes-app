@@ -664,6 +664,33 @@ def auth_logout():
     return jsonify({'ok': True})
 
 
+@app.route('/api/auth/change-password', methods=['POST'])
+def auth_change_password():
+    uid = current_user_id()
+    if not uid:
+        return jsonify({'error': 'Nejste přihlášeni'}), 401
+    data    = request.get_json() or {}
+    old_pw  = data.get('old_password',  '')
+    new_pw  = data.get('new_password',  '')
+    new_pw2 = data.get('new_password2', '')
+    if not old_pw or not new_pw or not new_pw2:
+        return jsonify({'error': 'Všechna pole jsou povinná'}), 400
+    if new_pw != new_pw2:
+        return jsonify({'error': 'Nová hesla se neshodují'}), 400
+    if len(new_pw) < 6:
+        return jsonify({'error': 'Nové heslo musí mít alespoň 6 znaků'}), 400
+    conn = get_db()
+    row  = conn.execute('SELECT password_hash FROM users WHERE id = ?', (uid,)).fetchone()
+    if not row or not check_password_hash(row['password_hash'], old_pw):
+        conn.close()
+        return jsonify({'error': 'Původní heslo je nesprávné'}), 400
+    conn.execute('UPDATE users SET password_hash = ? WHERE id = ?',
+                 (generate_password_hash(new_pw), uid))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
 # ── App routes ────────────────────────────────────────────────────────────────
 
 @app.route('/')
