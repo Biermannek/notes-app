@@ -338,9 +338,13 @@
     .btn-backup.secondary:hover:not(:disabled){background:#e0e2e8}
     .btn-backup.danger{background:#fee2e2;color:#991b1b}
     .btn-backup.danger:hover:not(:disabled){background:#fecaca}
-    .backup-table-wrap{max-height:260px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:10px;font-size:.8rem}
+    .backup-table-wrap{border:1px solid #e0e0e0;border-radius:10px;font-size:.8rem;overflow:hidden}
     .backup-table{width:100%;border-collapse:collapse}
-    .backup-table thead th{position:sticky;top:0;background:#f8f9fb;font-weight:600;color:#555;font-size:.77rem;padding:.45rem .7rem;text-align:left;border-bottom:1.5px solid #e0e0e0;white-space:nowrap}
+    .backup-table thead th{background:#f8f9fb;font-weight:600;color:#555;font-size:.77rem;padding:.45rem .7rem;text-align:left;border-bottom:1.5px solid #e0e0e0;white-space:nowrap;cursor:pointer;user-select:none}
+    .backup-table thead th:hover{background:#eff0f5}
+    .backup-table thead th.th-nosort{cursor:default}
+    .backup-table thead th .sort-arrow{display:inline-block;margin-left:.3rem;font-size:.72rem;color:#aaa;width:.8rem}
+    .backup-table thead th .sort-arrow.active{color:#6c63ff}
     .backup-table tbody tr{border-bottom:1px solid #f0f2f5;color:#444}
     .backup-table tbody tr:last-child{border-bottom:none}
     .backup-table tbody tr:hover{background:#fafafa}
@@ -348,7 +352,16 @@
     .backup-table td.col-name{font-family:monospace;font-size:.77rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .backup-table td.col-num{text-align:right;color:#666}
     .backup-table td.col-size{text-align:right;color:#aaa}
-    .backup-table td.col-action{text-align:center}
+    .backup-table td.col-action{text-align:right;white-space:nowrap}
+    .btn-backup.delete{background:#fee2e2;color:#991b1b;padding:.3rem .65rem;font-size:.78rem}
+    .btn-backup.delete:hover{background:#fecaca}
+    .backup-pagination{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-top:.75rem;font-size:.82rem;color:#555}
+    .backup-pagination select{padding:.25rem .5rem;border:1.5px solid #e0e0e0;border-radius:7px;font-size:.82rem;font-family:inherit;color:#333;background:#fff;cursor:pointer}
+    .backup-pagination select:focus{outline:none;border-color:#6c63ff}
+    .backup-pagination button{padding:.28rem .7rem;border:1.5px solid #e0e0e0;border-radius:7px;background:#fff;font-size:.82rem;cursor:pointer;color:#555}
+    .backup-pagination button:hover:not(:disabled){background:#f0f2f5}
+    .backup-pagination button:disabled{opacity:.4;cursor:not-allowed}
+    .backup-pagination .pg-info{color:#888}
     .backup-msg{font-size:.84rem;margin-top:.5rem;min-height:1.2em}
     .backup-msg.ok{color:#10b981}
     .backup-msg.err{color:#ef4444}
@@ -897,18 +910,31 @@
             <table class="backup-table">
               <thead>
                 <tr>
-                  <th>Název zálohy</th>
-                  <th>Kdy vznikla</th>
-                  <th>Kdo vytvořil</th>
-                  <th class="col-num">Uživatelé</th>
-                  <th class="col-num">Poznámky</th>
-                  <th>Verze</th>
-                  <th class="col-size">Velikost</th>
-                  <th class="col-action"></th>
+                  <th onclick="sortBackups('name')">Název zálohy <span class="sort-arrow" id="bsort-name"></span></th>
+                  <th onclick="sortBackups('created_at')">Kdy vznikla <span class="sort-arrow" id="bsort-created_at"></span></th>
+                  <th onclick="sortBackups('created_by')">Kdo vytvořil <span class="sort-arrow" id="bsort-created_by"></span></th>
+                  <th class="col-num" onclick="sortBackups('user_count')">Uživatelé <span class="sort-arrow" id="bsort-user_count"></span></th>
+                  <th class="col-num" onclick="sortBackups('note_count')">Poznámky <span class="sort-arrow" id="bsort-note_count"></span></th>
+                  <th onclick="sortBackups('version')">Verze <span class="sort-arrow" id="bsort-version"></span></th>
+                  <th class="col-size" onclick="sortBackups('size_kb')">Velikost <span class="sort-arrow" id="bsort-size_kb"></span></th>
+                  <th class="th-nosort col-action"></th>
                 </tr>
               </thead>
               <tbody id="backupFileList"></tbody>
             </table>
+          </div>
+          <div class="backup-pagination">
+            <span class="pg-info">Zobrazit:</span>
+            <select id="backupPageSize" onchange="setBackupPageSize(parseInt(this.value))">
+              <option value="10" selected>10</option>
+              <option value="20">20</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+            <span class="pg-info">záznamů na stránku</span>
+            <button onclick="backupPagePrev()" id="btnBackupPrev" disabled>‹ Předchozí</button>
+            <span class="pg-info" id="backupPageInfo">1 / 1</span>
+            <button onclick="backupPageNext()" id="btnBackupNext" disabled>Další ›</button>
           </div>
         </div>
         <div class="backup-msg" id="backupMsg"></div>
@@ -976,6 +1002,18 @@
     <div class="modal-actions">
       <button class="btn btn-primary" style="background:#f59e0b" onclick="confirmRestore()">⚠️ Ano, obnovit zálohu</button>
       <button class="btn-modal-stay" onclick="document.getElementById('restoreModal').classList.remove('visible')">Zrušit</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: smazání zálohy -->
+<div class="modal-overlay" id="deleteBackupModal">
+  <div class="modal-box">
+    <div class="modal-title">🗑️ Smazat zálohu?</div>
+    <div class="modal-body">Záloha bude <strong>trvale odstraněna</strong> z NASu:<br><br><code id="deleteBackupFilename" style="font-size:.85rem;color:#991b1b"></code><br><br>Tuto akci nelze vrátit zpět.</div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" style="background:#ef4444" onclick="confirmDeleteBackup()">🗑️ Ano, smazat zálohu</button>
+      <button class="btn-modal-stay" onclick="document.getElementById('deleteBackupModal').classList.remove('visible')">Zrušit</button>
     </div>
   </div>
 </div>
@@ -1373,6 +1411,11 @@ async function saveSchedule() {
 }
 
 // ---- Status & file list ----
+let _backupAllData  = [];
+let _backupSort     = { col: null, dir: null };
+let _backupPage     = 0;
+let _backupPageSize = 10;
+
 async function loadBackupStatus() {
   const card = document.getElementById('backupCard');
   if (!card) return;
@@ -1388,36 +1431,113 @@ async function loadBackupStatus() {
     document.getElementById('backupLastTime').textContent = d.last_backup || '—';
     document.getElementById('backupCount').textContent    = d.backup_count;
     document.getElementById('btnBackupNow').disabled = !d.enabled;
-    // Apply schedule config to UI
     if (d.config) applyScheduleToUI(d.config);
-    // File list with metadata — rendered as table rows
-    const fileSection = document.getElementById('backupFileSection');
-    const fileList    = document.getElementById('backupFileList');
-    if (d.backups && d.backups.length) {
-      fileSection.style.display = 'block';
-      fileList.innerHTML = d.backups.map(f => {
-        const createdAt  = f.created_at ? fmt(f.created_at) : '—';
-        const createdBy  = f.created_by  || '—';
-        const userCount  = f.user_count  != null ? f.user_count  : '—';
-        const noteCount  = f.note_count  != null ? f.note_count  : '—';
-        const version    = f.version     ? `v${f.version}` : '—';
-        const sizeTxt    = f.size_kb     != null ? `${f.size_kb} KB` : '—';
-        const safeName   = f.name.replace(/'/g, "\\'");
-        return `<tr>
-          <td class="col-name" title="${f.name}">${f.name}</td>
-          <td>${createdAt}</td>
-          <td>${createdBy}</td>
-          <td class="col-num">${userCount}</td>
-          <td class="col-num">${noteCount}</td>
-          <td>${version}</td>
-          <td class="col-size">${sizeTxt}</td>
-          <td class="col-action"><button class="btn-restore" onclick="startRestore('${safeName}')">↩ Obnovit</button></td>
-        </tr>`;
-      }).join('');
-    } else {
-      fileSection.style.display = 'none';
-    }
+    _backupAllData = d.backups || [];
+    _backupPage = 0;
+    renderBackupTable();
   } catch(e) {}
+}
+
+function sortBackups(col) {
+  if (_backupSort.col === col) {
+    if (_backupSort.dir === null) _backupSort.dir = 'asc';
+    else if (_backupSort.dir === 'asc') _backupSort.dir = 'desc';
+    else { _backupSort.col = null; _backupSort.dir = null; }
+  } else {
+    _backupSort.col = col;
+    _backupSort.dir = 'asc';
+  }
+  _backupPage = 0;
+  renderBackupTable();
+}
+
+function setBackupPageSize(n) {
+  _backupPageSize = n;
+  _backupPage = 0;
+  renderBackupTable();
+}
+
+function backupPagePrev() {
+  if (_backupPage > 0) { _backupPage--; renderBackupTable(); }
+}
+
+function backupPageNext() {
+  const pages = Math.ceil(_backupAllData.length / _backupPageSize);
+  if (_backupPage < pages - 1) { _backupPage++; renderBackupTable(); }
+}
+
+function renderBackupTable() {
+  const fileSection = document.getElementById('backupFileSection');
+  const fileList    = document.getElementById('backupFileList');
+  if (!_backupAllData.length) {
+    fileSection.style.display = 'none';
+    return;
+  }
+  fileSection.style.display = 'block';
+
+  // Sort
+  let data = [..._backupAllData];
+  const { col, dir } = _backupSort;
+  if (col && dir) {
+    data.sort((a, b) => {
+      let av = a[col] ?? '', bv = b[col] ?? '';
+      if (typeof av === 'number' && typeof bv === 'number') {
+        return dir === 'asc' ? av - bv : bv - av;
+      }
+      av = String(av).toLowerCase(); bv = String(bv).toLowerCase();
+      if (av < bv) return dir === 'asc' ? -1 : 1;
+      if (av > bv) return dir === 'asc' ?  1 : -1;
+      return 0;
+    });
+  }
+
+  // Update sort arrows
+  ['name','created_at','created_by','user_count','note_count','version','size_kb'].forEach(c => {
+    const el = document.getElementById('bsort-' + c);
+    if (!el) return;
+    if (_backupSort.col === c) {
+      el.textContent = _backupSort.dir === 'asc' ? '▲' : '▼';
+      el.className = 'sort-arrow active';
+    } else {
+      el.textContent = '–';
+      el.className = 'sort-arrow';
+    }
+  });
+
+  // Pagination
+  const total = data.length;
+  const pages = Math.ceil(total / _backupPageSize) || 1;
+  if (_backupPage >= pages) _backupPage = pages - 1;
+  const start = _backupPage * _backupPageSize;
+  const slice = data.slice(start, start + _backupPageSize);
+
+  document.getElementById('backupPageInfo').textContent = `${_backupPage + 1} / ${pages}`;
+  document.getElementById('btnBackupPrev').disabled = _backupPage === 0;
+  document.getElementById('btnBackupNext').disabled = _backupPage >= pages - 1;
+
+  // Render rows
+  fileList.innerHTML = slice.map(f => {
+    const createdAt = f.created_at ? fmt(f.created_at) : '—';
+    const createdBy = f.created_by  || '—';
+    const userCount = f.user_count  != null ? f.user_count  : '—';
+    const noteCount = f.note_count  != null ? f.note_count  : '—';
+    const version   = f.version     ? `v${f.version}` : '—';
+    const sizeTxt   = f.size_kb     != null ? `${f.size_kb} KB` : '—';
+    const safeName  = f.name.replace(/'/g, "\\'");
+    return `<tr>
+      <td class="col-name" title="${f.name}">${f.name}</td>
+      <td>${createdAt}</td>
+      <td>${createdBy}</td>
+      <td class="col-num">${userCount}</td>
+      <td class="col-num">${noteCount}</td>
+      <td>${version}</td>
+      <td class="col-size">${sizeTxt}</td>
+      <td class="col-action">
+        <button class="btn-restore" onclick="startRestore('${safeName}')">↩ Obnovit</button>
+        <button class="btn-backup delete" onclick="startDeleteBackup('${safeName}')" style="margin-left:.3rem">🗑</button>
+      </td>
+    </tr>`;
+  }).join('');
 }
 
 // ---- Trigger & download ----
@@ -1473,6 +1593,35 @@ async function confirmRestore() {
     }
   } catch(e) { msg.textContent = '❌ Chyba spojení'; msg.className = 'backup-msg err'; }
   _restoreFilename = null;
+}
+
+// ---- Delete backup ----
+let _deleteBackupFilename = null;
+
+function startDeleteBackup(filename) {
+  _deleteBackupFilename = filename;
+  document.getElementById('deleteBackupFilename').textContent = filename;
+  document.getElementById('deleteBackupModal').classList.add('visible');
+}
+
+async function confirmDeleteBackup() {
+  document.getElementById('deleteBackupModal').classList.remove('visible');
+  if (!_deleteBackupFilename) return;
+  const msg = document.getElementById('backupMsg');
+  msg.textContent = '⏳ Mazání zálohy…'; msg.className = 'backup-msg';
+  try {
+    const r = await fetch(`/api/backup/${encodeURIComponent(_deleteBackupFilename)}`, { method: 'DELETE' });
+    const d = await r.json();
+    if (d.ok) {
+      msg.textContent = '✓ Záloha smazána.';
+      msg.className = 'backup-msg ok';
+      await loadBackupStatus();
+    } else {
+      msg.textContent = '❌ ' + (d.error || 'Chyba mazání');
+      msg.className = 'backup-msg err';
+    }
+  } catch(e) { msg.textContent = '❌ Chyba spojení'; msg.className = 'backup-msg err'; }
+  _deleteBackupFilename = null;
 }
 
 // ---- JSON Import ----

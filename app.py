@@ -1367,6 +1367,26 @@ def backup_restore(filename):
     return jsonify({'ok': False, 'error': msg}), 500
 
 
+@app.route('/api/backup/<filename>', methods=['DELETE'])
+def backup_delete(filename):
+    """Delete a backup file (and its .meta.json sidecar) from BACKUP_DIR."""
+    if not is_admin():
+        return jsonify({'error': 'Přístup odepřen'}), 403
+    if not re.match(r'^notes-backup-[\d_-]+\.db$', filename):
+        return jsonify({'error': 'Neplatný název zálohy'}), 400
+    bd = BACKUP_DIR
+    if not bd:
+        return jsonify({'error': 'BACKUP_DIR není nastaven'}), 400
+    fp = os.path.join(bd, filename)
+    if not os.path.exists(fp):
+        return jsonify({'error': 'Záloha nenalezena'}), 404
+    os.remove(fp)
+    meta_fp = fp.replace('.db', '.meta.json')
+    if os.path.exists(meta_fp):
+        os.remove(meta_fp)
+    return jsonify({'ok': True})
+
+
 @app.route('/api/backup/download-db', methods=['GET'])
 def backup_download_db():
     """Download a point-in-time copy of the SQLite database."""
