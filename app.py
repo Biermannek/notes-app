@@ -1253,21 +1253,28 @@ def email_note(note_id):
         return jsonify({'error': 'Nejste přihlášeni'}), 401
     if not email_enabled():
         return jsonify({'error': 'E-mail není nakonfigurován na serveru'}), 503
-    data = request.get_json() or {}
-    to   = (data.get('to') or '').strip()
-    if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', to):
-        return jsonify({'error': 'Neplatný formát e-mailu'}), 400
+    data       = request.get_json() or {}
+    to         = (data.get('to') or '').strip()
+    to_user_id = data.get('to_user_id')
     conn = get_db()
     note = conn.execute(
         'SELECT n.text, n.user_id, u.full_name AS owner_name '
         'FROM notes n JOIN users u ON u.id = n.user_id WHERE n.id = ?',
         (note_id,)
     ).fetchone()
-    conn.close()
     if not note:
+        conn.close()
         return jsonify({'error': 'Poznámka nenalezena'}), 404
     if note['user_id'] != uid:
+        conn.close()
         return jsonify({'error': 'Přístup odepřen'}), 403
+    if to_user_id:
+        row = conn.execute('SELECT email FROM users WHERE id = ?', (to_user_id,)).fetchone()
+        if row and row['email']:
+            to = row['email'].strip()
+    conn.close()
+    if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', to):
+        return jsonify({'error': 'Neplatný nebo chybějící e-mail příjemce'}), 400
     note_link = f'{APP_URL.rstrip("/")}/'.rstrip('/') + '/' if APP_URL else ''
     link_tag  = (f'<p style="margin-top:1.2rem"><a href="{note_link}" '
                  f'style="color:#6c63ff">Otevřít aplikaci Notes</a></p>') if note_link else ''
