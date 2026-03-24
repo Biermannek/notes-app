@@ -213,22 +213,22 @@
     .tag-stat-chip-all:hover,.tag-stat-chip-all.active{background:#6c63ff;color:#fff;border-color:#6c63ff}
 
     /* ── Admin ── */
-    .admin-tab-nav{display:flex;gap:.5rem;margin-bottom:1.5rem;border-bottom:2px solid #e0e0e0;padding-bottom:0}
-    .admin-tab-item{padding:.6rem 1rem;font-size:.92rem;font-weight:600;color:#888;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s}
-    .admin-tab-item:hover{color:#6c63ff}
-    .admin-tab-item.active{color:#6c63ff;border-bottom-color:#6c63ff}
-    .admin-panel{display:none}
-    .admin-panel.active{display:block}
+    .nav-section-label{padding:.75rem 1.25rem .2rem;font-size:.72rem;font-weight:700;color:rgba(255,255,255,.35);text-transform:uppercase;letter-spacing:.08em;user-select:none}
     .user-role-badge{display:inline-block;padding:.2rem .55rem;border-radius:20px;font-size:.76rem;font-weight:600;white-space:nowrap}
     .user-role-badge.admin{background:#ede9fe;color:#6c63ff}
     .user-role-badge.user{background:#f0f0f0;color:#666}
     .admin-users-table-wrap{overflow-x:auto;margin-top:.5rem}
     .admin-users-table{width:100%;border-collapse:collapse;font-size:.88rem}
-    .admin-users-table thead th{text-align:left;padding:.6rem .8rem;font-size:.78rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #e0e0e0;background:#fafafa;white-space:nowrap}
+    .admin-users-table thead th{text-align:left;padding:.6rem .8rem;font-size:.78rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #e0e0e0;background:#fafafa;white-space:nowrap;cursor:pointer;user-select:none;transition:color .12s}
+    .admin-users-table thead th:hover{color:#6c63ff}
+    .admin-users-table thead th.sort-asc,.admin-users-table thead th.sort-desc{color:#6c63ff}
+    .admin-users-table thead th .sort-arrow{display:inline-block;margin-left:.3rem;font-size:.75rem;opacity:.5}
+    .admin-users-table thead th.sort-asc .sort-arrow,.admin-users-table thead th.sort-desc .sort-arrow{opacity:1}
     .admin-users-table tbody tr{border-bottom:1px solid #f0f0f0;transition:background .12s}
     .admin-users-table tbody tr:hover{background:#faf9ff}
     .admin-users-table td{padding:.65rem .8rem;color:#333;vertical-align:middle}
     .admin-users-table td.col-num{text-align:right;color:#888}
+    .admin-users-table thead th.col-num{text-align:right}
 
     /* ── Toast ── */
     .toast{position:fixed;bottom:1.5rem;right:1.5rem;background:#1a1a2e;color:#fff;padding:.75rem 1.2rem;border-radius:10px;font-size:.9rem;opacity:0;transform:translateY(10px);transition:all .3s;pointer-events:none;z-index:999}
@@ -415,7 +415,13 @@
     <div class="nav-sub" id="navTagList"></div>
     <div class="nav-item" onclick="showPage('stats')" id="nav-stats" style="display:none"><span class="nav-icon">📊</span> Statistiky</div>
     <div class="nav-item" onclick="showPage('settings')" id="nav-settings" style="display:none"><span class="nav-icon">⚙️</span> Nastavení</div>
-    <div class="nav-item" onclick="showPage('admin')" id="nav-admin" style="display:none"><span class="nav-icon">🛡️</span> Administrace</div>
+    <div id="navAdminSection" style="display:none">
+      <div class="nav-section-label">🛡️ Administrace</div>
+      <div class="nav-sub">
+        <div class="nav-sub-item" id="nav-admin-users" onclick="showPage('admin-users')"><span style="font-size:.85rem">👥</span> Uživatelé</div>
+        <div class="nav-sub-item" id="nav-admin-backups" onclick="showPage('admin-backups')"><span style="font-size:.85rem">🗄️</span> Zálohy</div>
+      </div>
+    </div>
     <div class="sidebar-footer">Verze: {{ version }}</div>
   </div>
 </nav>
@@ -707,36 +713,32 @@
 
   </div>
 
-  <!-- Admin page -->
-  <div class="page" id="page-admin">
-    <h2 class="page-title">🛡️ Administrace</h2>
-    <div class="admin-tab-nav">
-      <div class="admin-tab-item active" id="admin-tab-users" onclick="showAdminTab('users')">👥 Uživatelé</div>
-      <div class="admin-tab-item" id="admin-tab-backups" onclick="showAdminTab('backups')">🗄️ Zálohy</div>
-    </div>
-
-    <!-- Podzáložka: Uživatelé -->
-    <div class="admin-panel active" id="adminpanel-users">
+  <!-- Admin: Uživatelé -->
+  <div class="page" id="page-admin-users">
+    <h2 class="page-title">👥 Uživatelé</h2>
+    <div class="card">
       <div class="admin-users-table-wrap">
-        <table class="admin-users-table">
+        <table class="admin-users-table" id="adminUsersTableEl">
           <thead>
             <tr>
-              <th>Jméno a příjmení</th>
-              <th>Uživatelské jméno</th>
-              <th>E-mail</th>
-              <th>Role</th>
-              <th>Registrace</th>
-              <th class="col-num">Poznámky</th>
+              <th data-col="full_name" onclick="sortAdminUsers('full_name')">Jméno a příjmení<span class="sort-arrow">↕</span></th>
+              <th data-col="username" onclick="sortAdminUsers('username')">Uživatelské jméno<span class="sort-arrow">↕</span></th>
+              <th data-col="email" onclick="sortAdminUsers('email')">E-mail<span class="sort-arrow">↕</span></th>
+              <th data-col="role" onclick="sortAdminUsers('role')">Role<span class="sort-arrow">↕</span></th>
+              <th data-col="created_at" onclick="sortAdminUsers('created_at')">Registrace<span class="sort-arrow">↕</span></th>
+              <th data-col="note_count" class="col-num" onclick="sortAdminUsers('note_count')">Poznámky<span class="sort-arrow">↕</span></th>
             </tr>
           </thead>
           <tbody id="adminUsersTable"></tbody>
         </table>
       </div>
     </div>
+  </div>
 
-    <!-- Podzáložka: Zálohy -->
-    <div class="admin-panel" id="adminpanel-backups">
-      <div class="card" id="backupCard">
+  <!-- Admin: Zálohy -->
+  <div class="page" id="page-admin-backups">
+    <h2 class="page-title">🗄️ Zálohy</h2>
+    <div class="card" id="backupCard">
         <h3 style="font-size:1.05rem;font-weight:700;color:#1a1a2e;margin-bottom:1rem">🗄️ Zálohy databáze</h3>
 
         <!-- Stav -->
@@ -825,7 +827,6 @@
         </div>
         <div class="backup-msg" id="backupMsg"></div>
       </div>
-    </div>
   </div>
 
 </main>
@@ -1353,23 +1354,9 @@ async function doImportJson() {
 }
 
 // ── Admin ─────────────────────────────────────────────────────────────────
-let _activeAdminTab = 'users';
-function loadAdminPage() {
-  showAdminTab(_activeAdminTab);
-  if (_activeAdminTab === 'users') loadAdminUsers();
-  if (_activeAdminTab === 'backups') loadBackupStatus();
-}
-function showAdminTab(tab) {
-  _activeAdminTab = tab;
-  document.querySelectorAll('.admin-tab-item').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('.admin-panel').forEach(el => el.classList.remove('active'));
-  const tabEl = document.getElementById('admin-tab-' + tab);
-  const panelEl = document.getElementById('adminpanel-' + tab);
-  if (tabEl) tabEl.classList.add('active');
-  if (panelEl) panelEl.classList.add('active');
-  if (tab === 'users') loadAdminUsers();
-  if (tab === 'backups') loadBackupStatus();
-}
+let _adminUsersData = [];
+let _adminUsersSort = { col: null, dir: null }; // dir: null | 'asc' | 'desc'
+
 async function loadAdminUsers() {
   const tbody = document.getElementById('adminUsersTable');
   if (!tbody) return;
@@ -1377,26 +1364,80 @@ async function loadAdminUsers() {
   try {
     const r = await fetch('/api/admin/users');
     if (!r.ok) { tbody.innerHTML = '<tr><td colspan="6" style="color:#e53e3e;padding:1rem">Chyba načtení uživatelů.</td></tr>'; return; }
-    const users = await r.json();
-    if (!users.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#aaa;padding:1.5rem">Žádní uživatelé</td></tr>'; return; }
-    tbody.innerHTML = users.map(u => {
-      const badge = u.role === 'admin'
-        ? `<span class="user-role-badge admin">admin</span>`
-        : `<span class="user-role-badge user">uživatel</span>`;
-      const created = u.created_at ? u.created_at.slice(0, 10) : '—';
-      return `<tr>
-        <td>${escHtml(u.full_name)}</td>
-        <td style="font-family:monospace;color:#555">${escHtml(u.username)}</td>
-        <td style="color:#555">${escHtml(u.email || '—')}</td>
-        <td>${badge}</td>
-        <td style="color:#888;font-size:.84rem">${created}</td>
-        <td class="col-num">${u.note_count ?? 0}</td>
-      </tr>`;
-    }).join('');
+    _adminUsersData = await r.json();
+    renderAdminUsersTable();
   } catch(e) {
     tbody.innerHTML = '<tr><td colspan="6" style="color:#e53e3e;padding:1rem">Chyba spojení.</td></tr>';
   }
 }
+
+function sortAdminUsers(col) {
+  if (_adminUsersSort.col === col) {
+    // cyklus: asc → desc → null
+    if (_adminUsersSort.dir === 'asc')  _adminUsersSort.dir = 'desc';
+    else if (_adminUsersSort.dir === 'desc') { _adminUsersSort.col = null; _adminUsersSort.dir = null; }
+    else _adminUsersSort.dir = 'asc';
+  } else {
+    _adminUsersSort.col = col;
+    _adminUsersSort.dir = 'asc';
+  }
+  renderAdminUsersTable();
+}
+
+function renderAdminUsersTable() {
+  const tbody = document.getElementById('adminUsersTable');
+  if (!tbody) return;
+
+  // Aktualizuj šipky v záhlaví
+  const tableEl = document.getElementById('adminUsersTableEl');
+  if (tableEl) {
+    tableEl.querySelectorAll('thead th').forEach(th => {
+      const col = th.dataset.col;
+      th.classList.remove('sort-asc', 'sort-desc');
+      const arrow = th.querySelector('.sort-arrow');
+      if (col === _adminUsersSort.col) {
+        th.classList.add(_adminUsersSort.dir === 'asc' ? 'sort-asc' : 'sort-desc');
+        if (arrow) arrow.textContent = _adminUsersSort.dir === 'asc' ? '↑' : '↓';
+      } else {
+        if (arrow) arrow.textContent = '↕';
+      }
+    });
+  }
+
+  if (!_adminUsersData.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#aaa;padding:1.5rem">Žádní uživatelé</td></tr>';
+    return;
+  }
+
+  let data = [..._adminUsersData];
+  if (_adminUsersSort.col && _adminUsersSort.dir) {
+    const col = _adminUsersSort.col;
+    const dir = _adminUsersSort.dir === 'asc' ? 1 : -1;
+    data.sort((a, b) => {
+      let va = a[col] ?? '';
+      let vb = b[col] ?? '';
+      if (col === 'note_count') { va = Number(va); vb = Number(vb); }
+      else { va = String(va).toLowerCase(); vb = String(vb).toLowerCase(); }
+      return va < vb ? -dir : va > vb ? dir : 0;
+    });
+  }
+
+  tbody.innerHTML = data.map(u => {
+    const badge = u.role === 'admin'
+      ? `<span class="user-role-badge admin">admin</span>`
+      : `<span class="user-role-badge user">uživatel</span>`;
+    const created = u.created_at ? u.created_at.slice(0, 10) : '—';
+    return `<tr>
+      <td>${escHtml(u.full_name)}</td>
+      <td style="font-family:monospace;color:#555">${escHtml(u.username)}</td>
+      <td style="color:#555">${escHtml(u.email || '—')}</td>
+      <td>${badge}</td>
+      <td style="color:#888;font-size:.84rem">${created}</td>
+      <td class="col-num">${u.note_count ?? 0}</td>
+    </tr>`;
+  }).join('');
+}
+
 function escHtml(s) {
   if (!s) return '';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -1411,7 +1452,7 @@ function updateTopbar() {
   const privRow      = document.getElementById('newNotePrivacyRow');
   const settingsNav  = document.getElementById('nav-settings');
   const statsNav     = document.getElementById('nav-stats');
-  const adminNav     = document.getElementById('nav-admin');
+  const adminSection = document.getElementById('navAdminSection');
   const anonBanner   = document.getElementById('anonBanner');
   const noteFormCard = document.getElementById('noteFormCard');
   const archiveBtn   = document.getElementById('btnArchiveToggle');
@@ -1425,7 +1466,7 @@ function updateTopbar() {
     if (privRow)        privRow.style.display       = 'flex';
     if (settingsNav)    settingsNav.style.display    = 'flex';
     if (statsNav)       statsNav.style.display       = 'flex';
-    if (adminNav)       adminNav.style.display       = isAdmin() ? 'flex' : 'none';
+    if (adminSection)   adminSection.style.display   = isAdmin() ? 'block' : 'none';
     if (anonBanner)     anonBanner.style.display     = 'none';
     if (noteFormCard)   noteFormCard.style.display   = 'block';
     if (archiveBtn)     archiveBtn.style.display     = '';
@@ -1437,7 +1478,7 @@ function updateTopbar() {
     if (privRow)        privRow.style.display       = 'none';
     if (settingsNav)    settingsNav.style.display    = 'none';
     if (statsNav)       statsNav.style.display       = 'none';
-    if (adminNav)       adminNav.style.display       = 'none';
+    if (adminSection)   adminSection.style.display   = 'none';
     if (anonBanner)     anonBanner.style.display     = 'block';
     if (noteFormCard)   noteFormCard.style.display   = 'none';
     if (archiveBtn)     archiveBtn.style.display     = 'none';
@@ -1802,7 +1843,8 @@ function _doShowPage(page) {
   if (navEl) navEl.classList.add('active');
   if (page === 'stats') { loadAllTags().then(buildTagStatFilter); loadDailyStats(); }
   if (page === 'settings') loadSettings();
-  if (page === 'admin') loadAdminPage();
+  if (page === 'admin-users') loadAdminUsers();
+  if (page === 'admin-backups') loadBackupStatus();
   if (page === 'login') setTimeout(() => { const el = document.getElementById('loginUsername'); if (el) el.focus(); }, 50);
   if (page === 'register') setTimeout(() => { const el = document.getElementById('regUsername'); if (el) el.focus(); }, 50);
   closeMobileMenu();
