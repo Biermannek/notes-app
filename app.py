@@ -14,16 +14,54 @@ import time
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'notes-app-secret-key-change-in-production')
 DB_PATH        = os.environ.get('DB_PATH',    '/data/notes.db')
-BACKUP_DIR     = os.environ.get('BACKUP_DIR', '')
-BACKUP_STATE   = '/data/.last_backup'
+BACKUP_DIR         = os.environ.get('BACKUP_DIR', '')
+BACKUP_STATE       = '/data/.last_backup'
+BACKUP_CONFIG_PATH = '/data/backup_config.json'
+
+_DEFAULT_CONFIG = {
+    'frequency':    'daily',   # hourly | daily | weekly | monthly
+    'time':         '02:00',   # HH:MM — pro daily/weekly/monthly
+    'minute':       0,         # 0–59 — pro hourly
+    'weekday':      0,         # 0=Po … 6=Ne — pro weekly
+    'day_of_month': 1,         # 1–28 — pro monthly
+}
 
 
 # ── Backup helpers ────────────────────────────────────────────────────────────
 
+def load_backup_config():
+    if os.path.exists(BACKUP_CONFIG_PATH):
+        try:
+            with open(BACKUP_CONFIG_PATH) as f:
+                cfg = json.load(f)
+                return {**_DEFAULT_CONFIG, **cfg}
+        except Exception:
+            pass
+    return dict(_DEFAULT_CONFIG)
+
+
+def save_backup_config(cfg):
+    os.makedirs('/data', exist_ok=True)
+    with open(BACKUP_CONFIG_PATH, 'w') as f:
+        json.dump(cfg, f, indent=2)
+
+
+def _db_counts():
+    """Returns (user_count, note_count) from the live DB."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        uc = conn.execute('SELECT COUNT(*) FROM users').fetchone()[0]
+        nc = conn.execute('SELECT COUNT(*) FROM notes').fetchone()[0]
+        conn.close()
+        return uc, nc
+    except Exception:
+        return 0, 0
+
+
 def do_db_backup():
-    """Copy current SQLite DB to BACKUP_DIR using online backup API.
+    """Copy current SQLite DB to BACKUP_DIR. Creates a .meta.json sidecar with statistics.
     Returns (True, filepath) on success, (False, error_message) on failure.
-    Keeps the last 30 daily backup files.
+    Retains the 30 most recent backups.
     """
     bd = BACKUP_DIR
     if not bd:
@@ -32,16 +70,31 @@ def do_db_backup():
         os.makedirs(bd, exist_ok=True)
         ts  = datetime.now().strftime('%Y-%m-%d_%H-%M')
         dst = os.path.join(bd, f'notes-backup-{ts}.db')
+        # Online backup (safe for concurrent reads)
         src_conn = sqlite3.connect(DB_PATH)
         dst_conn = sqlite3.connect(dst)
         src_conn.backup(dst_conn)
         dst_conn.close()
         src_conn.close()
-        # Retain only the 30 most recent backups
-        files = sorted(glob.glob(os.path.join(bd, 'notes-backup-*.db')))
-        for old in files[:-30]:
+        # Metadata sidecar
+        uc, nc = _db_counts()
+        meta = {
+            'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'version':    __version__,
+            'user_count': uc,
+            'note_count': nc,
+            'db_size_kb': round(os.path.getsize(dst) / 1024, 1),
+        }
+        with open(dst.replace('.db', '.meta.json'), 'w') as f:
+            json.dump(meta, f)
+        # Retain only 30 most recent — remove both .db and .meta.json
+        all_db = sorted(glob.glob(os.path.join(bd, 'notes-backup-*.db')))
+        for old in all_db[:-30]:
             try:
                 os.remove(old)
+                meta_old = old.replace('.db', '.meta.json')
+                if os.path.exists(meta_old):
+                    os.remove(meta_old)
             except Exception:
                 pass
         # Persist last-backup timestamp
@@ -54,6 +107,35 @@ def do_db_backup():
         return False, str(e)
 
 
+def restore_from_backup(filename):
+    """Restore DB from a backup file in BACKUP_DIR.
+    Returns (True, message) or (False, error_message).
+    """
+    bd = BACKUP_DIR
+    if not bd:
+        return False, 'BACKUP_DIR není nastaven'
+    src_path = os.path.join(bd, filename)
+    if not os.path.exists(src_path):
+        return False, 'Soubor zálohy nenalezen'
+    # Basic sanity check — must be a valid SQLite file
+    if not filename.startswith('notes-backup-') or not filename.endswith('.db'):
+        return False, 'Neplatný název souboru zálohy'
+    try:
+        src_conn = sqlite3.connect(src_path)
+        dst_conn = sqlite3.connect(DB_PATH)
+        src_conn.backup(dst_conn)
+        dst_conn.close()
+        src_conn.close()
+        # Update last-backup state so scheduler doesn't immediately re-backup
+        with open(BACKUP_STATE, 'w') as f:
+            f.write(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+        app.logger.info(f'Restore OK from: {src_path}')
+        return True, f'Záloha {filename} úspěšně obnovena'
+    except Exception as e:
+        app.logger.error(f'Restore error: {e}')
+        return False, str(e)
+
+
 def _get_last_backup():
     """Returns last backup datetime string, or None."""
     if os.path.exists(BACKUP_STATE):
@@ -62,18 +144,73 @@ def _get_last_backup():
     return None
 
 
+def should_backup_now(cfg):
+    """Returns True if a backup should run right now according to the schedule."""
+    now  = datetime.now()
+    freq = cfg.get('frequency', 'daily')
+    last_str = _get_last_backup()
+    last = None
+    if last_str:
+        try:
+            last = datetime.strptime(last_str, '%Y-%m-%d %H:%M:%S')
+        except Exception:
+            pass
+
+    if freq == 'hourly':
+        target_min = int(cfg.get('minute', 0))
+        if now.minute != target_min:
+            return False
+        # Already ran this hour?
+        if last and last.year == now.year and last.month == now.month \
+                and last.day == now.day and last.hour == now.hour:
+            return False
+        return True
+
+    # Parse HH:MM for daily/weekly/monthly
+    try:
+        h, m = map(int, cfg.get('time', '02:00').split(':'))
+    except Exception:
+        h, m = 2, 0
+
+    if freq == 'daily':
+        if now.hour != h or now.minute != m:
+            return False
+        if last and last.date() == now.date():
+            return False
+        return True
+
+    if freq == 'weekly':
+        target_wd = int(cfg.get('weekday', 0))
+        if now.weekday() != target_wd or now.hour != h or now.minute != m:
+            return False
+        iso_now  = now.isocalendar()
+        iso_last = last.isocalendar() if last else None
+        if iso_last and iso_last[0] == iso_now[0] and iso_last[1] == iso_now[1]:
+            return False
+        return True
+
+    if freq == 'monthly':
+        target_day = int(cfg.get('day_of_month', 1))
+        if now.day != target_day or now.hour != h or now.minute != m:
+            return False
+        if last and last.year == now.year and last.month == now.month:
+            return False
+        return True
+
+    return False
+
+
 def _backup_loop():
-    """Background thread: wakes hourly, runs backup if today's hasn't been done yet."""
+    """Background thread: checks every ~50 s against the configured schedule."""
     while True:
         try:
             if BACKUP_DIR:
-                today = datetime.now().strftime('%Y-%m-%d')
-                last  = _get_last_backup()
-                if not last or last[:10] != today:
+                cfg = load_backup_config()
+                if should_backup_now(cfg):
                     do_db_backup()
         except Exception as e:
             app.logger.error(f'Backup scheduler: {e}')
-        time.sleep(3600)
+        time.sleep(50)
 
 
 def start_backup_scheduler():
@@ -966,15 +1103,52 @@ def backup_status():
     if bd and os.path.isdir(bd):
         raw = sorted(glob.glob(os.path.join(bd, 'notes-backup-*.db')), reverse=True)
         for fp in raw[:30]:
-            sz = os.path.getsize(fp)
-            files.append({'name': os.path.basename(fp), 'size_kb': round(sz / 1024, 1)})
+            name     = os.path.basename(fp)
+            sz       = os.path.getsize(fp)
+            meta     = {}
+            meta_fp  = fp.replace('.db', '.meta.json')
+            if os.path.exists(meta_fp):
+                try:
+                    with open(meta_fp) as mf:
+                        meta = json.load(mf)
+                except Exception:
+                    pass
+            files.append({
+                'name':       name,
+                'size_kb':    round(sz / 1024, 1),
+                'user_count': meta.get('user_count'),
+                'note_count': meta.get('note_count'),
+                'created_at': meta.get('created_at'),
+                'version':    meta.get('version'),
+            })
     return jsonify({
         'enabled':      bool(bd),
         'backup_dir':   bd or None,
         'last_backup':  _get_last_backup(),
         'backup_count': len(files),
         'backups':      files,
+        'config':       load_backup_config(),
     })
+
+
+@app.route('/api/backup/config', methods=['GET'])
+def backup_get_config():
+    if not is_admin():
+        return jsonify({'error': 'Přístup odepřen'}), 403
+    return jsonify(load_backup_config())
+
+
+@app.route('/api/backup/config', methods=['PUT'])
+def backup_put_config():
+    if not is_admin():
+        return jsonify({'error': 'Přístup odepřen'}), 403
+    data = request.get_json() or {}
+    cfg  = load_backup_config()
+    for key in ('frequency', 'time', 'minute', 'weekday', 'day_of_month'):
+        if key in data:
+            cfg[key] = data[key]
+    save_backup_config(cfg)
+    return jsonify(cfg)
 
 
 @app.route('/api/backup/trigger', methods=['POST'])
@@ -984,6 +1158,16 @@ def backup_trigger():
     ok, msg = do_db_backup()
     if ok:
         return jsonify({'ok': True, 'file': os.path.basename(msg)})
+    return jsonify({'ok': False, 'error': msg}), 500
+
+
+@app.route('/api/backup/restore/<filename>', methods=['POST'])
+def backup_restore(filename):
+    if not is_admin():
+        return jsonify({'error': 'Přístup odepřen'}), 403
+    ok, msg = restore_from_backup(filename)
+    if ok:
+        return jsonify({'ok': True, 'message': msg})
     return jsonify({'ok': False, 'error': msg}), 500
 
 

@@ -307,6 +307,13 @@
     .backup-msg.ok{color:#10b981}
     .backup-msg.err{color:#ef4444}
     .backup-import-row{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;margin-top:.5rem}
+    .backup-schedule-row{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.85rem}
+    .backup-schedule-row select,.backup-schedule-row input[type="time"],.backup-schedule-row input[type="number"]{padding:.35rem .6rem;border:1.5px solid #e0e0e0;border-radius:8px;font-size:.85rem;font-family:inherit;color:#333;background:#fff}
+    .backup-schedule-row select:focus,.backup-schedule-row input:focus{outline:none;border-color:#6c63ff}
+    .backup-schedule-label{font-size:.82rem;color:#666;white-space:nowrap}
+    .backup-file-meta{font-size:.77rem;color:#aaa;margin-top:.15rem}
+    .btn-restore{padding:.25rem .65rem;font-size:.76rem;font-weight:600;border:1.5px solid #f59e0b;border-radius:7px;background:transparent;color:#b45309;cursor:pointer;white-space:nowrap;transition:background .15s}
+    .btn-restore:hover{background:#fef3c7}
     .settings-row{display:flex;align-items:center;justify-content:space-between;gap:1.25rem;padding:1rem 0;border-bottom:1px solid #f0f2f5}
     .settings-row:last-child{border-bottom:none;padding-bottom:0}
     .settings-label{flex:1}
@@ -655,15 +662,51 @@
     <div class="card" id="backupCard" style="display:none">
       <h3 style="font-size:1.05rem;font-weight:700;color:#1a1a2e;margin-bottom:1rem">🗄️ Zálohy databáze</h3>
 
+      <!-- Stav -->
       <div class="backup-status-row">
         <span id="backupBadge" class="backup-badge off">● Zálohy vypnuty</span>
         <span id="backupDirLabel" style="font-size:.82rem;color:#888;font-family:monospace"></span>
       </div>
-      <div style="font-size:.82rem;color:#888;margin-bottom:1rem">
+      <div style="font-size:.82rem;color:#888;margin-bottom:1.1rem">
         Poslední záloha: <strong id="backupLastTime">—</strong>
         &nbsp;·&nbsp; Počet záloh: <strong id="backupCount">0</strong>
       </div>
 
+      <!-- Plán zálohování -->
+      <div style="font-size:.88rem;font-weight:600;color:#444;margin-bottom:.5rem">Plán automatického zálohování</div>
+      <div class="backup-schedule-row">
+        <span class="backup-schedule-label">Frekvence:</span>
+        <select id="schedFreq" onchange="onScheduleFreqChange()">
+          <option value="hourly">Každou hodinu</option>
+          <option value="daily" selected>Každý den</option>
+          <option value="weekly">Každý týden</option>
+          <option value="monthly">Každý měsíc</option>
+        </select>
+        <!-- Hodina: minute -->
+        <span class="backup-schedule-label" id="lblMinute" style="display:none">v minutu:</span>
+        <input type="number" id="schedMinute" min="0" max="59" value="0" style="width:60px;display:none"/>
+        <!-- Daily/weekly/monthly: time -->
+        <span class="backup-schedule-label" id="lblTime">v čas:</span>
+        <input type="time" id="schedTime" value="02:00"/>
+        <!-- Weekly: weekday -->
+        <span class="backup-schedule-label" id="lblWeekday" style="display:none">den:</span>
+        <select id="schedWeekday" style="display:none">
+          <option value="0">Pondělí</option>
+          <option value="1">Úterý</option>
+          <option value="2">Středa</option>
+          <option value="3">Čtvrtek</option>
+          <option value="4">Pátek</option>
+          <option value="5">Sobota</option>
+          <option value="6">Neděle</option>
+        </select>
+        <!-- Monthly: day_of_month -->
+        <span class="backup-schedule-label" id="lblDayOfMonth" style="display:none">den v měsíci:</span>
+        <input type="number" id="schedDayOfMonth" min="1" max="28" value="1" style="width:60px;display:none"/>
+        <button class="btn-backup primary" onclick="saveSchedule()" style="margin-left:.25rem">💾 Uložit plán</button>
+        <span id="schedSavedMsg" style="font-size:.82rem;color:#10b981;display:none">✓ Uloženo</span>
+      </div>
+
+      <!-- Manuální akce -->
       <div class="backup-actions">
         <button class="btn-backup primary" id="btnBackupNow" onclick="triggerBackup()">⬇ Zálohovat teď</button>
         <button class="btn-backup secondary" onclick="downloadDb()">💾 Stáhnout DB</button>
@@ -692,6 +735,18 @@
   </div>
 
 </main>
+
+<!-- Modal: obnova zálohy -->
+<div class="modal-overlay" id="restoreModal">
+  <div class="modal-box">
+    <div class="modal-title">⚠️ Obnovit zálohu?</div>
+    <div class="modal-body">Aktuální data budou <strong>přepsána</strong> daty ze zálohy:<br><br><code id="restoreFilename" style="font-size:.85rem;color:#6c63ff"></code><br><br>Tuto akci nelze vrátit zpět. Doporučujeme nejdříve stáhnout aktuální zálohu.</div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" style="background:#f59e0b" onclick="confirmRestore()">⚠️ Ano, obnovit zálohu</button>
+      <button class="btn-modal-stay" onclick="document.getElementById('restoreModal').classList.remove('visible')">Zrušit</button>
+    </div>
+  </div>
+</div>
 
 <!-- Modal: neuložené změny v nastavení -->
 <div class="modal-overlay" id="settingsDirtyModal">
@@ -983,6 +1038,56 @@ function isAdmin() {
   return currentUser && currentUser.role === 'admin';
 }
 
+// ---- Schedule UI helpers ----
+function onScheduleFreqChange() {
+  const freq = document.getElementById('schedFreq').value;
+  const show = (id, visible) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = visible ? '' : 'none';
+  };
+  show('lblMinute',      freq === 'hourly');
+  show('schedMinute',    freq === 'hourly');
+  show('lblTime',        freq !== 'hourly');
+  show('schedTime',      freq !== 'hourly');
+  show('lblWeekday',     freq === 'weekly');
+  show('schedWeekday',   freq === 'weekly');
+  show('lblDayOfMonth',  freq === 'monthly');
+  show('schedDayOfMonth',freq === 'monthly');
+}
+
+function applyScheduleToUI(cfg) {
+  const freq = cfg.frequency || 'daily';
+  document.getElementById('schedFreq').value = freq;
+  document.getElementById('schedTime').value = cfg.time || '02:00';
+  document.getElementById('schedMinute').value = cfg.minute ?? 0;
+  document.getElementById('schedWeekday').value = cfg.weekday ?? 0;
+  document.getElementById('schedDayOfMonth').value = cfg.day_of_month ?? 1;
+  onScheduleFreqChange();
+}
+
+async function saveSchedule() {
+  const freq = document.getElementById('schedFreq').value;
+  const cfg  = {
+    frequency:    freq,
+    time:         document.getElementById('schedTime').value || '02:00',
+    minute:       parseInt(document.getElementById('schedMinute').value) || 0,
+    weekday:      parseInt(document.getElementById('schedWeekday').value) || 0,
+    day_of_month: parseInt(document.getElementById('schedDayOfMonth').value) || 1,
+  };
+  try {
+    const r = await fetch('/api/backup/config', {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(cfg)
+    });
+    if (r.ok) {
+      const msg = document.getElementById('schedSavedMsg');
+      msg.style.display = 'inline';
+      setTimeout(() => msg.style.display = 'none', 2500);
+    }
+  } catch(e) {}
+}
+
+// ---- Status & file list ----
 async function loadBackupStatus() {
   const card = document.getElementById('backupCard');
   if (!card) return;
@@ -992,38 +1097,48 @@ async function loadBackupStatus() {
     const r = await fetch('/api/backup/status');
     if (!r.ok) return;
     const d = await r.json();
-    const badge    = document.getElementById('backupBadge');
-    const dirLabel = document.getElementById('backupDirLabel');
-    const lastTime = document.getElementById('backupLastTime');
-    const count    = document.getElementById('backupCount');
+    document.getElementById('backupBadge').textContent = d.enabled ? '● Zálohy aktivní' : '● Zálohy vypnuty';
+    document.getElementById('backupBadge').className   = 'backup-badge ' + (d.enabled ? 'on' : 'off');
+    document.getElementById('backupDirLabel').textContent = d.backup_dir || '';
+    document.getElementById('backupLastTime').textContent = d.last_backup || '—';
+    document.getElementById('backupCount').textContent    = d.backup_count;
+    document.getElementById('btnBackupNow').disabled = !d.enabled;
+    // Apply schedule config to UI
+    if (d.config) applyScheduleToUI(d.config);
+    // File list with metadata
     const fileSection = document.getElementById('backupFileSection');
     const fileList    = document.getElementById('backupFileList');
-    badge.textContent = d.enabled ? '● Zálohy aktivní' : '● Zálohy vypnuty';
-    badge.className = 'backup-badge ' + (d.enabled ? 'on' : 'off');
-    dirLabel.textContent = d.backup_dir ? d.backup_dir : '';
-    lastTime.textContent = d.last_backup || '—';
-    count.textContent    = d.backup_count;
-    document.getElementById('btnBackupNow').disabled = !d.enabled;
     if (d.backups && d.backups.length) {
       fileSection.style.display = 'block';
-      fileList.innerHTML = d.backups.map(f =>
-        `<div class="backup-file-row">
-           <span class="backup-file-name">${f.name}</span>
-           <span class="backup-file-size">${f.size_kb} KB</span>
-         </div>`
-      ).join('');
+      fileList.innerHTML = d.backups.map(f => {
+        const meta = [
+          f.user_count != null ? `👤 ${f.user_count} už.` : null,
+          f.note_count != null ? `📝 ${f.note_count} pozn.` : null,
+          f.version    ? `v${f.version}` : null,
+        ].filter(Boolean).join('  ·  ');
+        return `<div class="backup-file-row">
+          <div>
+            <div class="backup-file-name">${f.name}</div>
+            ${meta ? `<div class="backup-file-meta">${meta}</div>` : ''}
+          </div>
+          <div style="display:flex;align-items:center;gap:.5rem;flex-shrink:0">
+            <span class="backup-file-size">${f.size_kb} KB</span>
+            <button class="btn-restore" onclick="startRestore('${f.name}')">↩ Obnovit</button>
+          </div>
+        </div>`;
+      }).join('');
     } else {
       fileSection.style.display = 'none';
     }
   } catch(e) {}
 }
 
+// ---- Trigger & download ----
 async function triggerBackup() {
   const btn = document.getElementById('btnBackupNow');
   const msg = document.getElementById('backupMsg');
   btn.disabled = true;
-  msg.textContent = '⏳ Zálohování…';
-  msg.className = 'backup-msg';
+  msg.textContent = '⏳ Zálohování…'; msg.className = 'backup-msg';
   try {
     const r = await fetch('/api/backup/trigger', { method: 'POST' });
     const d = await r.json();
@@ -1035,21 +1150,45 @@ async function triggerBackup() {
       msg.textContent = '❌ ' + (d.error || 'Chyba zálohy');
       msg.className = 'backup-msg err';
     }
-  } catch(e) {
-    msg.textContent = '❌ Chyba spojení';
-    msg.className = 'backup-msg err';
-  }
+  } catch(e) { msg.textContent = '❌ Chyba spojení'; msg.className = 'backup-msg err'; }
   btn.disabled = false;
 }
 
-function downloadDb() {
-  window.location.href = '/api/backup/download-db';
+function downloadDb()  { window.location.href = '/api/backup/download-db'; }
+function exportJson()  { window.location.href = '/api/backup/export-json'; }
+
+// ---- Restore ----
+let _restoreFilename = null;
+
+function startRestore(filename) {
+  _restoreFilename = filename;
+  document.getElementById('restoreFilename').textContent = filename;
+  document.getElementById('restoreModal').classList.add('visible');
 }
 
-function exportJson() {
-  window.location.href = '/api/backup/export-json';
+async function confirmRestore() {
+  document.getElementById('restoreModal').classList.remove('visible');
+  if (!_restoreFilename) return;
+  const msg = document.getElementById('backupMsg');
+  msg.textContent = '⏳ Obnova zálohy…'; msg.className = 'backup-msg';
+  try {
+    const r = await fetch(`/api/backup/restore/${encodeURIComponent(_restoreFilename)}`, { method: 'POST' });
+    const d = await r.json();
+    if (d.ok) {
+      msg.textContent = '✓ ' + d.message;
+      msg.className = 'backup-msg ok';
+      await loadBackupStatus();
+      await loadNotes();
+      showToast('✓ Záloha obnovena — data jsou aktuální.');
+    } else {
+      msg.textContent = '❌ ' + (d.error || 'Chyba obnovy');
+      msg.className = 'backup-msg err';
+    }
+  } catch(e) { msg.textContent = '❌ Chyba spojení'; msg.className = 'backup-msg err'; }
+  _restoreFilename = null;
 }
 
+// ---- JSON Import ----
 let _importData = null;
 
 function importJsonSelected() {
@@ -1057,24 +1196,17 @@ function importJsonSelected() {
   const preview = document.getElementById('importPreview');
   const btnImport = document.getElementById('btnImport');
   const msg = document.getElementById('importMsg');
-  _importData = null;
-  preview.style.display = 'none';
-  btnImport.style.display = 'none';
-  msg.textContent = '';
+  _importData = null; preview.style.display = 'none'; btnImport.style.display = 'none'; msg.textContent = '';
   if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
     try {
       _importData = JSON.parse(e.target.result);
-      const nc = (_importData.notes || []).length;
-      const uc = (_importData.users || []).length;
+      const nc = (_importData.notes || []).length, uc = (_importData.users || []).length;
       preview.style.display = 'block';
       preview.textContent = `Soubor: ${file.name} · Exportováno: ${_importData.exported_at || '?'} · Verze: ${_importData.version || '?'} · Poznámky: ${nc} · Uživatelé: ${uc}`;
       btnImport.style.display = 'inline-flex';
-    } catch(err) {
-      msg.textContent = '❌ Neplatný JSON soubor';
-      msg.className = 'backup-msg err';
-    }
+    } catch(err) { msg.textContent = '❌ Neplatný JSON soubor'; msg.className = 'backup-msg err'; }
   };
   reader.readAsText(file);
 }
@@ -1083,13 +1215,10 @@ async function doImportJson() {
   if (!_importData) return;
   const btn = document.getElementById('btnImport');
   const msg = document.getElementById('importMsg');
-  btn.disabled = true;
-  msg.textContent = '⏳ Importuji…';
-  msg.className = 'backup-msg';
+  btn.disabled = true; msg.textContent = '⏳ Importuji…'; msg.className = 'backup-msg';
   try {
     const r = await fetch('/api/backup/import-json', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(_importData)
     });
     const d = await r.json();
@@ -1097,14 +1226,8 @@ async function doImportJson() {
       msg.textContent = `✓ Importováno: ${d.imported_notes} poznámek, ${d.imported_users} uživatelů`;
       msg.className = 'backup-msg ok';
       await loadNotes();
-    } else {
-      msg.textContent = '❌ ' + (d.error || 'Chyba importu');
-      msg.className = 'backup-msg err';
-    }
-  } catch(e) {
-    msg.textContent = '❌ Chyba spojení';
-    msg.className = 'backup-msg err';
-  }
+    } else { msg.textContent = '❌ ' + (d.error || 'Chyba importu'); msg.className = 'backup-msg err'; }
+  } catch(e) { msg.textContent = '❌ Chyba spojení'; msg.className = 'backup-msg err'; }
   btn.disabled = false;
 }
 
