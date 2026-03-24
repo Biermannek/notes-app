@@ -423,13 +423,13 @@
 
   <!-- PAGE: Poznámky -->
   <div class="page active" id="page-notes">
-    <h2 class="page-title">Poznámky</h2>
+    <h2 class="page-title" id="notePageTitle" style="display:none">Poznámky</h2>
 
     <!-- Banner pro nepřihlášené uživatele -->
-    <div id="anonBanner" class="card" style="display:none">
-      <div style="margin-bottom:1rem">
-        <div style="font-size:1.1rem;font-weight:700;color:#1a1a2e;margin-bottom:.25rem">🔐 Přihlaste se</div>
-        <div style="font-size:.88rem;color:#777">Pro přidávání a správu poznámek je třeba se přihlásit. Níže jsou zobrazeny veřejné poznámky.</div>
+    <div id="anonBanner" class="card" style="display:none;max-width:480px;margin:2rem auto 0">
+      <div style="margin-bottom:1.25rem">
+        <div style="font-size:1.15rem;font-weight:700;color:#1a1a2e;margin-bottom:.35rem">🔐 Přihlaste se</div>
+        <div style="font-size:.88rem;color:#777">Pro přístup k aplikaci je nutné přihlášení.</div>
       </div>
       <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end">
         <div style="flex:1;min-width:140px">
@@ -486,6 +486,9 @@
       </div>
     </div>
 
+    <!-- Notes content — visible only when logged in -->
+    <div id="notesContent" style="display:none">
+
     <!-- Search bar -->
     <div class="search-bar" id="searchBarEl">
       <div class="search-wrap">
@@ -528,6 +531,8 @@
     </div>
 
     <div id="notesList"></div>
+
+    </div><!-- /#notesContent -->
   </div>
 
   <!-- PAGE: Statistiky -->
@@ -1304,32 +1309,38 @@ function updateTopbar() {
   const loginBtn    = document.getElementById('topbarLoginBtn');
   const nameEl      = document.getElementById('topbarName');
   const initEl      = document.getElementById('topbarInitials');
-  const privRow     = document.getElementById('newNotePrivacyRow');
-  const settingsNav = document.getElementById('nav-settings');
-  const statsNav    = document.getElementById('nav-stats');
-  const anonBanner  = document.getElementById('anonBanner');
+  const privRow      = document.getElementById('newNotePrivacyRow');
+  const settingsNav  = document.getElementById('nav-settings');
+  const statsNav     = document.getElementById('nav-stats');
+  const anonBanner   = document.getElementById('anonBanner');
   const noteFormCard = document.getElementById('noteFormCard');
-  const archiveBtn  = document.getElementById('btnArchiveToggle');
+  const archiveBtn   = document.getElementById('btnArchiveToggle');
+  const notesContent  = document.getElementById('notesContent');
+  const notePageTitle = document.getElementById('notePageTitle');
   if (currentUser) {
     nameEl.textContent  = currentUser.full_name;
     initEl.textContent  = currentUser.full_name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-    userDiv.style.display   = 'flex';
-    loginBtn.style.display  = 'none';
-    if (privRow)       privRow.style.display      = 'flex';
-    if (settingsNav)   settingsNav.style.display   = 'flex';
-    if (statsNav)      statsNav.style.display      = 'flex';
-    if (anonBanner)    anonBanner.style.display    = 'none';
-    if (noteFormCard)  noteFormCard.style.display  = 'block';
-    if (archiveBtn)    archiveBtn.style.display    = '';
+    userDiv.style.display    = 'flex';
+    loginBtn.style.display   = 'none';
+    if (privRow)        privRow.style.display       = 'flex';
+    if (settingsNav)    settingsNav.style.display    = 'flex';
+    if (statsNav)       statsNav.style.display       = 'flex';
+    if (anonBanner)     anonBanner.style.display     = 'none';
+    if (noteFormCard)   noteFormCard.style.display   = 'block';
+    if (archiveBtn)     archiveBtn.style.display     = '';
+    if (notesContent)   notesContent.style.display   = 'block';
+    if (notePageTitle)  notePageTitle.style.display  = '';
   } else {
-    userDiv.style.display   = 'none';
-    loginBtn.style.display  = 'none';   // přihlášení je nyní inline v banneru
-    if (privRow)       privRow.style.display      = 'none';
-    if (settingsNav)   settingsNav.style.display   = 'none';
-    if (statsNav)      statsNav.style.display      = 'none';
-    if (anonBanner)    anonBanner.style.display    = 'block';
-    if (noteFormCard)  noteFormCard.style.display  = 'none';
-    if (archiveBtn)    archiveBtn.style.display    = 'none';
+    userDiv.style.display    = 'none';
+    loginBtn.style.display   = 'none';   // přihlášení je nyní inline v banneru
+    if (privRow)        privRow.style.display       = 'none';
+    if (settingsNav)    settingsNav.style.display    = 'none';
+    if (statsNav)       statsNav.style.display       = 'none';
+    if (anonBanner)     anonBanner.style.display     = 'block';
+    if (noteFormCard)   noteFormCard.style.display   = 'none';
+    if (archiveBtn)     archiveBtn.style.display     = 'none';
+    if (notesContent)   notesContent.style.display   = 'none';
+    if (notePageTitle)  notePageTitle.style.display  = 'none';
     // Reset privacy state
     newNoteIsPublic = false;
     const privBtn = document.getElementById('btnNewPrivacy');
@@ -1911,6 +1922,10 @@ function toggleFilterTag(name) {
 }
 
 async function loadNotes() {
+  if (!currentUser) {
+    document.getElementById('notesList').innerHTML = '';
+    return;
+  }
   let url = `/api/notes?sort_by=${document.getElementById('sortBy').value}&order=${currentOrder}`;
   if (activeFiltTags.length) url += `&tags=${activeFiltTags.join(',')}&tag_mode=${tagMode}`;
   if (searchQuery.trim()) url += `&search=${encodeURIComponent(searchQuery.trim())}`;

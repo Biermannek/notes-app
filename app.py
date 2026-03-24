@@ -382,7 +382,8 @@ def user_filter(strict=False, show_public=True):
                     'EXISTS (SELECT 1 FROM note_shares ns WHERE ns.note_id = n.id AND ns.user_id = ?))',
                     [uid, uid]
                 )
-        return ' AND (n.user_id IS NULL OR n.is_public = 1)', []
+        # Unauthenticated: no notes returned (viewing requires login)
+        return ' AND 1 = 0', []
 
 
 def check_note_access(conn, note_id):
@@ -757,14 +758,13 @@ self.addEventListener('fetch', e => {
 
 @app.route('/api/tags', methods=['GET'])
 def get_tags():
-    q   = request.args.get('q', '').strip().lower()
     uid = current_user_id()
-    if uid:
-        notes_cond  = ('(n.user_id = ? OR n.is_public = 1 OR '
-                       'EXISTS (SELECT 1 FROM note_shares ns WHERE ns.note_id = n.id AND ns.user_id = ?))')
-        notes_params = [uid, uid]
-    else:
-        notes_cond, notes_params = '(n.user_id IS NULL OR n.is_public = 1)', []
+    if not uid:
+        return jsonify([])
+    q   = request.args.get('q', '').strip().lower()
+    notes_cond   = ('(n.user_id = ? OR n.is_public = 1 OR '
+                    'EXISTS (SELECT 1 FROM note_shares ns WHERE ns.note_id = n.id AND ns.user_id = ?))')
+    notes_params = [uid, uid]
 
     conn = get_db()
     if q:
@@ -791,6 +791,8 @@ def get_tags():
 
 @app.route('/api/notes', methods=['GET'])
 def get_notes():
+    if not current_user_id():
+        return jsonify({'error': 'Přihlášení vyžadováno'}), 401
     sort_by    = request.args.get('sort_by', 'created_at')
     order      = request.args.get('order', 'desc')
     tags_raw   = request.args.get('tags', '')
