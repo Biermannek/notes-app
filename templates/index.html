@@ -2320,7 +2320,7 @@ async function showShareDropdown(id, q) {
   dd.innerHTML = filtered.map(u =>
     `<div class="share-dd-item"
           onmousedown="event.preventDefault()"
-          onclick="addShareUserToList(${id},'${u.username.replace(/'/g,"\\'")}','${u.full_name.replace(/'/g,"\\'")}',${u.user_id || 0})">
+          onclick="addShareUserToList(${id},'${u.username.replace(/'/g,"\\'")}','${u.full_name.replace(/'/g,"\\'")}',${u.id || 0})">
        <span>${escAttr(u.full_name)}</span>
        <span class="share-dd-login">@${escAttr(u.username)}</span>
      </div>`

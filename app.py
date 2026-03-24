@@ -1169,7 +1169,7 @@ def search_users():
         return jsonify([])
     conn = get_db()
     rows = conn.execute(
-        'SELECT username, full_name FROM users WHERE id != ? AND '
+        'SELECT id, username, full_name FROM users WHERE id != ? AND '
         '(username LIKE ? OR LOWER(full_name) LIKE ?) LIMIT 8',
         (uid, f'%{q}%', f'%{q}%')
     ).fetchall()
