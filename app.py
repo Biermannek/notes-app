@@ -621,7 +621,8 @@ def auth_login():
     session['user_id'] = row['id']
     return jsonify({
         'id': row['id'], 'username': row['username'],
-        'full_name': row['full_name'], 'email': row['email']
+        'full_name': row['full_name'], 'email': row['email'],
+        'role': row['role']
     })
 
 
