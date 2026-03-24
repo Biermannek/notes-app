@@ -324,16 +324,6 @@
     .share-email-check input{accent-color:#7c3aed;cursor:pointer;width:14px;height:14px}
     .note-shared-banner{display:flex;align-items:center;gap:.4rem;font-size:.78rem;color:#7c3aed;font-weight:600;margin-bottom:.45rem;padding:.3rem .55rem;background:#f5f3ff;border-radius:6px}
 
-    /* ── E-mail panel (sdílení poznámky) ── */
-    .email-panel{margin-top:.75rem;padding:.85rem 1rem;background:#fff8f0;border:1.5px solid #fed7aa;border-radius:10px}
-    .email-panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:.55rem}
-    .email-panel-title{font-size:.88rem;font-weight:700;color:#c2410c}
-    .email-input{width:100%;padding:.5rem .8rem;border:1.5px solid #e0e0e0;border-radius:8px;font-size:.88rem;font-family:inherit;color:#1a1a2e;background:#fff;transition:border-color .2s;box-sizing:border-box}
-    .email-input:focus{outline:none;border-color:#f97316}
-    .email-panel-actions{display:flex;gap:.4rem;margin-top:.6rem;align-items:center}
-    .email-panel-msg{font-size:.82rem;margin-left:.5rem;min-height:1.1em}
-    .email-panel-msg.ok{color:#10b981}
-    .email-panel-msg.err{color:#ef4444}
     /* ── Reminder badge + picker ── */
     .reminder-badge{display:inline-flex;align-items:center;gap:.3rem;font-size:.75rem;font-weight:600;color:#d97706;background:#fef3c7;border:1px solid #fde68a;padding:.18rem .55rem;border-radius:999px;margin-top:.3rem;cursor:default;flex-shrink:0}
     .reminder-badge.sent{color:#aaa;background:#f3f4f6;border-color:#e5e7eb}
@@ -2383,48 +2373,6 @@ async function saveShares(id) {
 
 // ── E-mail note ──────────────────────────────────────────────────────────────
 
-function startEmailNote(id) {
-  // Close any other open email panels
-  document.querySelectorAll('.email-panel').forEach(p => {
-    if (p.id !== `email-panel-${id}`) p.style.display = 'none';
-  });
-  const panel = document.getElementById(`email-panel-${id}`);
-  if (!panel) return;
-  const isOpen = panel.style.display !== 'none';
-  panel.style.display = isOpen ? 'none' : 'block';
-  if (!isOpen) {
-    const inp = document.getElementById(`email-to-${id}`);
-    if (inp) { inp.value = ''; setTimeout(() => inp.focus(), 50); }
-    const msg = document.getElementById(`email-msg-${id}`);
-    if (msg) { msg.textContent = ''; msg.className = 'email-panel-msg'; }
-  }
-}
-
-function closeEmailNote(id) {
-  const panel = document.getElementById(`email-panel-${id}`);
-  if (panel) panel.style.display = 'none';
-}
-
-async function sendNoteEmail(id) {
-  const to  = (document.getElementById(`email-to-${id}`)?.value || '').trim();
-  const msg = document.getElementById(`email-msg-${id}`);
-  msg.textContent = ''; msg.className = 'email-panel-msg';
-  if (!to) { msg.textContent = 'Zadejte e-mailovou adresu.'; msg.className = 'email-panel-msg err'; return; }
-  try {
-    const r = await fetch(`/api/notes/${id}/email`, {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ to })
-    });
-    const d = await r.json();
-    if (d.ok) {
-      msg.textContent = `✓ Poznámka odeslána na ${to}`; msg.className = 'email-panel-msg ok';
-      setTimeout(() => closeEmailNote(id), 2500);
-    } else {
-      msg.textContent = '❌ ' + (d.error || 'Chyba odeslání'); msg.className = 'email-panel-msg err';
-    }
-  } catch(e) { msg.textContent = '❌ Chyba spojení'; msg.className = 'email-panel-msg err'; }
-}
-
 // ── Reminder ──────────────────────────────────────────────────────────────────
 
 async function saveReminder(id) {
@@ -2757,10 +2705,6 @@ async function loadNotes() {
     const shareBtn = (isOwnNote && !showArchived && currentUser)
       ? `<button class="btn-share" id="share-btn-${n.id}" onclick="startShare(${n.id})" title="Sdílet s uživateli">👥</button>`
       : '';
-    // Email btn (logged-in owner only)
-    const emailBtn = (isOwnNote && !showArchived && currentUser)
-      ? `<button class="btn-share" onclick="startEmailNote(${n.id})" title="Odeslat e-mailem">📧</button>`
-      : '';
     // Action buttons
     const actions = showArchived
       ? `<button class="btn btn-edit" onclick="startEdit(${n.id})">✏️ Upravit</button>
@@ -2769,7 +2713,7 @@ async function loadNotes() {
           ? `<button class="btn-pin${n.is_pinned ? ' active' : ''}" onclick="togglePin(${n.id})" title="${n.is_pinned ? 'Odepnout' : 'Připnout'}">📌</button>
              <button class="btn btn-edit" onclick="startEdit(${n.id})">✏️ Upravit</button>
              <button class="btn-archive" onclick="archiveNote(${n.id})" title="Archivovat">🗑</button>
-             ${visBtn}${shareBtn}${emailBtn}`
+             ${visBtn}${shareBtn}`
           : (isSharedUser
               ? `<button class="btn btn-edit" onclick="startEdit(${n.id})" title="Upravit obsah poznámky">✏️ Upravit</button>`
               : ''));   // public-other: read-only
@@ -2803,21 +2747,6 @@ async function loadNotes() {
                <input type="checkbox" id="share-email-${n.id}" checked>
                📧 Poslat emailem
              </label>
-           </div>
-         </div>`
-      : '';
-    // Email panel (owner only)
-    const emailPanelHtml = (isOwnNote && !showArchived && currentUser)
-      ? `<div class="email-panel" id="email-panel-${n.id}" style="display:none">
-           <div class="email-panel-header">
-             <span class="email-panel-title">📧 Odeslat poznámku e-mailem</span>
-             <button class="btn-close-share" onclick="closeEmailNote(${n.id})">✕</button>
-           </div>
-           <input class="email-input" id="email-to-${n.id}" type="email" placeholder="Příjemce: email@example.com"
-                  onkeydown="if(event.key==='Enter')sendNoteEmail(${n.id})"/>
-           <div class="email-panel-actions">
-             <button class="btn btn-save" onclick="sendNoteEmail(${n.id})">✉ Odeslat</button>
-             <span class="email-panel-msg" id="email-msg-${n.id}"></span>
            </div>
          </div>`
       : '';
@@ -2865,7 +2794,6 @@ async function loadNotes() {
       <div class="note-text">${renderText(n.text)}</div>
       ${tagHtml ? `<div class="note-tags">${tagHtml}</div>` : ''}
       ${sharePanelHtml}
-      ${emailPanelHtml}
       <div class="note-edit-area">
         <div class="format-toolbar">
           <button class="fmt-btn" title="Tučně" onmousedown="event.preventDefault();fmtEdit(${n.id},'bold','**','**')"><b>B</b></button>
