@@ -322,6 +322,26 @@
     .share-actions{display:flex;gap:.4rem;margin-top:.65rem}
     .note-shared-banner{display:flex;align-items:center;gap:.4rem;font-size:.78rem;color:#7c3aed;font-weight:600;margin-bottom:.45rem;padding:.3rem .55rem;background:#f5f3ff;border-radius:6px}
 
+    /* ── E-mail panel (sdílení poznámky) ── */
+    .email-panel{margin-top:.75rem;padding:.85rem 1rem;background:#fff8f0;border:1.5px solid #fed7aa;border-radius:10px}
+    .email-panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:.55rem}
+    .email-panel-title{font-size:.88rem;font-weight:700;color:#c2410c}
+    .email-input{width:100%;padding:.5rem .8rem;border:1.5px solid #e0e0e0;border-radius:8px;font-size:.88rem;font-family:inherit;color:#1a1a2e;background:#fff;transition:border-color .2s;box-sizing:border-box}
+    .email-input:focus{outline:none;border-color:#f97316}
+    .email-panel-actions{display:flex;gap:.4rem;margin-top:.6rem;align-items:center}
+    .email-panel-msg{font-size:.82rem;margin-left:.5rem;min-height:1.1em}
+    .email-panel-msg.ok{color:#10b981}
+    .email-panel-msg.err{color:#ef4444}
+    /* ── Reminder badge + picker ── */
+    .reminder-badge{display:inline-flex;align-items:center;gap:.3rem;font-size:.75rem;font-weight:600;color:#d97706;background:#fef3c7;border:1px solid #fde68a;padding:.18rem .55rem;border-radius:999px;margin-top:.3rem;cursor:default;flex-shrink:0}
+    .reminder-badge.sent{color:#aaa;background:#f3f4f6;border-color:#e5e7eb}
+    .reminder-row{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-top:.5rem;font-size:.82rem;color:#555}
+    .reminder-row label{font-weight:600;white-space:nowrap}
+    .reminder-input{padding:.35rem .6rem;border:1.5px solid #e0e0e0;border-radius:8px;font-size:.83rem;font-family:inherit;color:#333;background:#fff}
+    .reminder-input:focus{outline:none;border-color:#f59e0b}
+    .btn-clear-reminder{border:none;background:transparent;color:#ef4444;cursor:pointer;font-size:.8rem;padding:.2rem .45rem;border-radius:5px;line-height:1}
+    .btn-clear-reminder:hover{background:#fee2e2}
+
     /* ── Settings page ── */
     .settings-group{display:flex;flex-direction:column}
     /* ── Backup sekce ── */
@@ -501,7 +521,10 @@
         <button class="btn btn-primary" style="margin-top:0;white-space:nowrap;flex-shrink:0" onclick="doInlineLogin()">Přihlásit se</button>
       </div>
       <div class="auth-error" id="inlineLoginError" style="margin-top:.75rem;margin-bottom:0"></div>
-      <div style="font-size:.82rem;color:#999;margin-top:.65rem">Nemáte účet? <a style="color:#6c63ff;cursor:pointer;font-weight:600" onclick="showPage('register')">Zaregistrujte se</a></div>
+      <div style="font-size:.82rem;color:#999;margin-top:.65rem">
+        Nemáte účet? <a style="color:#6c63ff;cursor:pointer;font-weight:600" onclick="showPage('register')">Zaregistrujte se</a>
+        &nbsp;·&nbsp; <a style="color:#aaa;cursor:pointer" onclick="openForgotPassword()">Zapomněli jste heslo?</a>
+      </div>
     </div>
 
     <div id="noteFormCard" class="card" style="display:none">
@@ -658,7 +681,7 @@
           <input id="loginPassword" type="password" placeholder="Zadejte heslo" autocomplete="current-password"/>
         </div>
         <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:.25rem" onclick="doLogin()">Přihlásit se</button>
-        <div class="auth-link">Nemáte účet? <a onclick="showPage('register')">Zaregistrujte se</a></div>
+        <div class="auth-link">Nemáte účet? <a onclick="showPage('register')">Zaregistrujte se</a> &nbsp;·&nbsp; <a onclick="openForgotPassword()" style="color:#aaa">Zapomněli jste heslo?</a></div>
       </div>
     </div>
   </div>
@@ -1014,6 +1037,49 @@
     <div class="modal-actions">
       <button class="btn btn-primary" style="background:#ef4444" onclick="confirmDeleteBackup()">🗑️ Ano, smazat zálohu</button>
       <button class="btn-modal-stay" onclick="document.getElementById('deleteBackupModal').classList.remove('visible')">Zrušit</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: zapomenuté heslo -->
+<div class="modal-overlay" id="forgotPwModal">
+  <div class="modal-box">
+    <div class="modal-title">🔑 Zapomenuté heslo</div>
+    <div class="modal-body">
+      <p style="font-size:.88rem;color:#666;margin-bottom:.85rem">Zadejte svůj e-mail. Pokud k němu existuje účet, zašleme odkaz pro reset hesla (platný 1 hodinu).</p>
+      <div class="auth-field" style="margin-bottom:.5rem">
+        <label for="forgotPwEmail">E-mailová adresa</label>
+        <input type="email" id="forgotPwEmail" placeholder="váš@email.cz" autocomplete="email"
+               onkeydown="if(event.key==='Enter')submitForgotPassword()"/>
+      </div>
+      <div class="auth-error" id="forgotPwError" style="margin-bottom:.5rem"></div>
+      <div id="forgotPwOk" style="display:none;font-size:.88rem;color:#10b981;margin-bottom:.5rem">✓ Pokud e-mail existuje, byl zaslán odkaz pro reset hesla.</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="btnForgotPwSubmit" onclick="submitForgotPassword()">Odeslat odkaz</button>
+      <button class="btn-modal-stay" onclick="document.getElementById('forgotPwModal').classList.remove('visible')">Zavřít</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: reset hesla (přes token z URL) -->
+<div class="modal-overlay" id="resetPwModal">
+  <div class="modal-box">
+    <div class="modal-title">🔒 Nastavit nové heslo</div>
+    <div class="modal-body">
+      <div class="auth-error" id="resetPwError" style="margin-bottom:.5rem"></div>
+      <div class="auth-field" style="margin-bottom:.75rem">
+        <label for="resetPwNew">Nové heslo</label>
+        <input type="password" id="resetPwNew" placeholder="Nové heslo (min. 6 znaků)" autocomplete="new-password"/>
+      </div>
+      <div class="auth-field" style="margin-bottom:.25rem">
+        <label for="resetPwNew2">Potvrzení hesla</label>
+        <input type="password" id="resetPwNew2" placeholder="Zopakujte nové heslo" autocomplete="new-password"
+               onkeydown="if(event.key==='Enter')submitResetPassword()"/>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="submitResetPassword()">Nastavit heslo</button>
     </div>
   </div>
 </div>
@@ -1999,6 +2065,81 @@ async function doLogout() {
   showToast('Odhlášení proběhlo úspěšně');
 }
 
+// ── Forgot / Reset password ──────────────────────────────────────────────────
+
+function openForgotPassword() {
+  document.getElementById('forgotPwEmail').value   = '';
+  document.getElementById('forgotPwError').textContent = '';
+  document.getElementById('forgotPwOk').style.display  = 'none';
+  document.getElementById('btnForgotPwSubmit').style.display = 'inline-flex';
+  document.getElementById('forgotPwModal').classList.add('visible');
+  setTimeout(() => document.getElementById('forgotPwEmail').focus(), 80);
+}
+
+async function submitForgotPassword() {
+  const email  = document.getElementById('forgotPwEmail').value.trim();
+  const errEl  = document.getElementById('forgotPwError');
+  const okEl   = document.getElementById('forgotPwOk');
+  const btn    = document.getElementById('btnForgotPwSubmit');
+  errEl.textContent = '';
+  okEl.style.display = 'none';
+  if (!email) { errEl.textContent = 'Zadejte e-mailovou adresu.'; return; }
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/auth/forgot-password', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ email })
+    });
+    const d = await r.json();
+    if (!r.ok && d.error) { errEl.textContent = d.error; }
+    else {
+      okEl.style.display = 'block';
+      btn.style.display  = 'none';
+    }
+  } catch(e) { errEl.textContent = 'Chyba spojení.'; }
+  btn.disabled = false;
+}
+
+let _resetToken = null;
+
+function checkResetTokenInUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const token  = params.get('reset_token');
+  if (!token) return;
+  _resetToken = token;
+  // Clean URL without reload
+  window.history.replaceState({}, '', window.location.pathname);
+  document.getElementById('resetPwNew').value   = '';
+  document.getElementById('resetPwNew2').value  = '';
+  document.getElementById('resetPwError').textContent = '';
+  document.getElementById('resetPwModal').classList.add('visible');
+}
+
+async function submitResetPassword() {
+  const new_pw  = document.getElementById('resetPwNew').value;
+  const new_pw2 = document.getElementById('resetPwNew2').value;
+  const errEl   = document.getElementById('resetPwError');
+  errEl.textContent = '';
+  if (!new_pw || !new_pw2) { errEl.textContent = 'Vyplňte obě pole.'; return; }
+  if (new_pw !== new_pw2)  { errEl.textContent = 'Hesla se neshodují.'; return; }
+  if (new_pw.length < 6)   { errEl.textContent = 'Heslo musí mít alespoň 6 znaků.'; return; }
+  try {
+    const r = await fetch('/api/auth/reset-password', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ token: _resetToken, new_password: new_pw, new_password2: new_pw2 })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      document.getElementById('resetPwModal').classList.remove('visible');
+      _resetToken = null;
+      showToast('✓ Heslo bylo úspěšně změněno. Nyní se přihlaste.');
+      showPage('login');
+    } else {
+      errEl.textContent = d.error || 'Chyba změny hesla.';
+    }
+  } catch(e) { errEl.textContent = 'Chyba spojení.'; }
+}
+
 // ── User menu ──────────────────────────────────────────────────────────────
 function toggleUserMenu() {
   const trigger  = document.getElementById('userMenuTrigger');
@@ -2219,6 +2360,87 @@ async function saveShares(id) {
   } catch (e) {
     if (errEl) errEl.textContent = 'Chyba spojení se serverem';
   }
+}
+
+// ── E-mail note ──────────────────────────────────────────────────────────────
+
+function startEmailNote(id) {
+  // Close any other open email panels
+  document.querySelectorAll('.email-panel').forEach(p => {
+    if (p.id !== `email-panel-${id}`) p.style.display = 'none';
+  });
+  const panel = document.getElementById(`email-panel-${id}`);
+  if (!panel) return;
+  const isOpen = panel.style.display !== 'none';
+  panel.style.display = isOpen ? 'none' : 'block';
+  if (!isOpen) {
+    const inp = document.getElementById(`email-to-${id}`);
+    if (inp) { inp.value = ''; setTimeout(() => inp.focus(), 50); }
+    const msg = document.getElementById(`email-msg-${id}`);
+    if (msg) { msg.textContent = ''; msg.className = 'email-panel-msg'; }
+  }
+}
+
+function closeEmailNote(id) {
+  const panel = document.getElementById(`email-panel-${id}`);
+  if (panel) panel.style.display = 'none';
+}
+
+async function sendNoteEmail(id) {
+  const to  = (document.getElementById(`email-to-${id}`)?.value || '').trim();
+  const msg = document.getElementById(`email-msg-${id}`);
+  msg.textContent = ''; msg.className = 'email-panel-msg';
+  if (!to) { msg.textContent = 'Zadejte e-mailovou adresu.'; msg.className = 'email-panel-msg err'; return; }
+  try {
+    const r = await fetch(`/api/notes/${id}/email`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ to })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      msg.textContent = `✓ Poznámka odeslána na ${to}`; msg.className = 'email-panel-msg ok';
+      setTimeout(() => closeEmailNote(id), 2500);
+    } else {
+      msg.textContent = '❌ ' + (d.error || 'Chyba odeslání'); msg.className = 'email-panel-msg err';
+    }
+  } catch(e) { msg.textContent = '❌ Chyba spojení'; msg.className = 'email-panel-msg err'; }
+}
+
+// ── Reminder ──────────────────────────────────────────────────────────────────
+
+async function saveReminder(id) {
+  const inp = document.getElementById(`reminder-input-${id}`);
+  if (!inp) return;
+  const localVal = inp.value;  // "YYYY-MM-DDTHH:MM" local time
+  let reminder_at = null;
+  if (localVal) {
+    // Convert local datetime to UTC string for storage
+    const dt = new Date(localVal);
+    if (isNaN(dt.getTime())) { showToast('Neplatný datum/čas připomínky'); return; }
+    reminder_at = dt.toISOString().slice(0, 19).replace('T', ' ');
+  }
+  try {
+    const r = await fetch(`/api/notes/${id}/reminder`, {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ reminder_at })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      showToast(reminder_at ? '✓ Připomínka nastavena' : '✓ Připomínka zrušena');
+      await loadNotes();
+    }
+  } catch(e) { showToast('Chyba spojení'); }
+}
+
+async function clearReminder(id) {
+  try {
+    const r = await fetch(`/api/notes/${id}/reminder`, {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ reminder_at: null })
+    });
+    const d = await r.json();
+    if (d.ok) { showToast('✓ Připomínka zrušena'); await loadNotes(); }
+  } catch(e) { showToast('Chyba spojení'); }
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────
@@ -2516,6 +2738,10 @@ async function loadNotes() {
     const shareBtn = (isOwnNote && !showArchived && currentUser)
       ? `<button class="btn-share" id="share-btn-${n.id}" onclick="startShare(${n.id})" title="Sdílet s uživateli">👥</button>`
       : '';
+    // Email btn (logged-in owner only)
+    const emailBtn = (isOwnNote && !showArchived && currentUser)
+      ? `<button class="btn-share" onclick="startEmailNote(${n.id})" title="Odeslat e-mailem">📧</button>`
+      : '';
     // Action buttons
     const actions = showArchived
       ? `<button class="btn btn-edit" onclick="startEdit(${n.id})">✏️ Upravit</button>
@@ -2524,7 +2750,7 @@ async function loadNotes() {
           ? `<button class="btn-pin${n.is_pinned ? ' active' : ''}" onclick="togglePin(${n.id})" title="${n.is_pinned ? 'Odepnout' : 'Připnout'}">📌</button>
              <button class="btn btn-edit" onclick="startEdit(${n.id})">✏️ Upravit</button>
              <button class="btn-archive" onclick="archiveNote(${n.id})" title="Archivovat">🗑</button>
-             ${visBtn}${shareBtn}`
+             ${visBtn}${shareBtn}${emailBtn}`
           : (isSharedUser
               ? `<button class="btn btn-edit" onclick="startEdit(${n.id})" title="Upravit obsah poznámky">✏️ Upravit</button>`
               : ''));   // public-other: read-only
@@ -2557,6 +2783,50 @@ async function loadNotes() {
            </div>
          </div>`
       : '';
+    // Email panel (owner only)
+    const emailPanelHtml = (isOwnNote && !showArchived && currentUser)
+      ? `<div class="email-panel" id="email-panel-${n.id}" style="display:none">
+           <div class="email-panel-header">
+             <span class="email-panel-title">📧 Odeslat poznámku e-mailem</span>
+             <button class="btn-close-share" onclick="closeEmailNote(${n.id})">✕</button>
+           </div>
+           <input class="email-input" id="email-to-${n.id}" type="email" placeholder="Příjemce: email@example.com"
+                  onkeydown="if(event.key==='Enter')sendNoteEmail(${n.id})"/>
+           <div class="email-panel-actions">
+             <button class="btn btn-save" onclick="sendNoteEmail(${n.id})">✉ Odeslat</button>
+             <span class="email-panel-msg" id="email-msg-${n.id}"></span>
+           </div>
+         </div>`
+      : '';
+    // Reminder badge (owner only)
+    const reminderBadge = (isOwnNote && n.reminder_at)
+      ? (() => {
+          const rdt  = new Date(n.reminder_at + 'Z');
+          const rtxt = isNaN(rdt) ? n.reminder_at : rdt.toLocaleString([], {dateStyle:'short',timeStyle:'short'});
+          const cls  = n.reminder_sent ? 'reminder-badge sent' : 'reminder-badge';
+          const lbl  = n.reminder_sent ? `🔔 Odesláno ${rtxt}` : `🔔 ${rtxt}`;
+          return `<span class="${cls}" title="Připomínka">${lbl}</span>`;
+        })()
+      : '';
+    // Reminder picker (only in edit area, owner only)
+    const reminderPickerHtml = isOwnNote
+      ? (() => {
+          let localVal = '';
+          if (n.reminder_at) {
+            const rdt = new Date(n.reminder_at + 'Z');
+            if (!isNaN(rdt)) {
+              const pad = v => String(v).padStart(2,'0');
+              localVal = `${rdt.getFullYear()}-${pad(rdt.getMonth()+1)}-${pad(rdt.getDate())}T${pad(rdt.getHours())}:${pad(rdt.getMinutes())}`;
+            }
+          }
+          return `<div class="reminder-row">
+            <label>🔔 Připomínka:</label>
+            <input type="datetime-local" class="reminder-input" id="reminder-input-${n.id}" value="${localVal}"/>
+            <button class="btn btn-save" onclick="saveReminder(${n.id})" style="padding:.3rem .7rem;font-size:.8rem">Nastavit</button>
+            ${n.reminder_at ? `<button class="btn-clear-reminder" onclick="clearReminder(${n.id})">✕ Zrušit</button>` : ''}
+          </div>`;
+        })()
+      : '';
     return `<div class="${noteClass}" id="note-${n.id}" data-text="${escAttr(n.text)}" data-shares="${escAttr(JSON.stringify(shareList))}">
       ${publicBanner}${sharedBanner}
       <div class="note-header">
@@ -2564,6 +2834,7 @@ async function loadNotes() {
           <div class="note-meta">🕐 Vytvořeno: ${fmt(n.created_at)}</div>
           ${n.updated_at ? `<div class="note-meta edited">✏️ Editováno: ${fmt(n.updated_at)}</div>` : ''}
           ${sharedBadge}
+          ${reminderBadge}
         </div>
         <div class="note-actions">
           ${actions}
@@ -2572,6 +2843,7 @@ async function loadNotes() {
       <div class="note-text">${renderText(n.text)}</div>
       ${tagHtml ? `<div class="note-tags">${tagHtml}</div>` : ''}
       ${sharePanelHtml}
+      ${emailPanelHtml}
       <div class="note-edit-area">
         <div class="format-toolbar">
           <button class="fmt-btn" title="Tučně" onmousedown="event.preventDefault();fmtEdit(${n.id},'bold','**','**')"><b>B</b></button>
@@ -2585,6 +2857,7 @@ async function loadNotes() {
         <div id="editWysiwyg-${n.id}" class="note-editor" contenteditable="true" data-placeholder="Uprav poznámku..." style="display:none"></div>
         <textarea id="edit-${n.id}" style="display:none">${esc(n.text)}</textarea>
         ${editTagsHtml}
+        ${reminderPickerHtml}
         <div class="note-edit-actions">
           <button class="btn btn-save" onclick="saveEdit(${n.id})">✓ Uložit</button>
           <button class="btn btn-cancel" onclick="cancelEdit(${n.id})">✕ Zrušit</button>
@@ -3076,10 +3349,11 @@ document.getElementById('notesList').addEventListener('click', async function(e)
   });
 });
 
-// Load current user first, then notes
+// Load current user first, then notes; also handle reset-password token in URL
 loadCurrentUser().then(() => {
   loadAllTags();
   loadNotes();
+  checkResetTokenInUrl();
 });
 
 document.getElementById('searchInput').addEventListener('input', e => {

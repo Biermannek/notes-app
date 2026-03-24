@@ -20,6 +20,13 @@ BACKUP_CONFIG_PATH = '/data/backup_config.json'
 _SCHEDULER_LOCK_FD = None   # kept alive so flock stays held
 _BACKUP_THREAD_LOCK = threading.Lock()  # prevents concurrent backups
 
+SMTP_HOST     = os.environ.get('SMTP_HOST',     'smtp.gmail.com')
+SMTP_PORT     = int(os.environ.get('SMTP_PORT', '587'))
+SMTP_USER     = os.environ.get('SMTP_USER',     '')
+SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD', '')
+SMTP_FROM     = os.environ.get('SMTP_FROM',     '')   # e.g. "Notes App <you@gmail.com>"
+APP_URL       = os.environ.get('APP_URL',        '')   # e.g. "https://notes.example.com"
+
 _DEFAULT_CONFIG = {
     'frequency':    'daily',   # hourly | daily | weekly | monthly
     'time':         '02:00',   # HH:MM — pro daily/weekly/monthly
@@ -27,6 +34,35 @@ _DEFAULT_CONFIG = {
     'weekday':      0,         # 0=Po … 6=Ne — pro weekly
     'day_of_month': 1,         # 1–28 — pro monthly
 }
+
+
+# ── E-mail helpers ────────────────────────────────────────────────────────────
+
+def email_enabled():
+    return bool(SMTP_USER and SMTP_PASSWORD)
+
+
+def send_email(to, subject, html_body):
+    """Send an HTML e-mail via SMTP. Returns (True, None) or (False, error_str)."""
+    if not email_enabled():
+        return False, 'E-mail není nakonfigurován (chybí SMTP_USER / SMTP_PASSWORD)'
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = subject
+    msg['From']    = SMTP_FROM or SMTP_USER
+    msg['To']      = to
+    msg.attach(MIMEText(html_body, 'html', 'utf-8'))
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as smtp:
+            smtp.ehlo()
+            smtp.starttls()
+            smtp.login(SMTP_USER, SMTP_PASSWORD)
+            smtp.sendmail(SMTP_USER, [to], msg.as_string())
+        return True, None
+    except Exception as e:
+        return False, str(e)
 
 
 # ── Backup helpers ────────────────────────────────────────────────────────────
@@ -226,6 +262,43 @@ def should_backup_now(cfg):
     return False
 
 
+def check_and_send_reminders():
+    """Check for due reminders and send e-mails. Runs inside the scheduler thread."""
+    if not email_enabled():
+        return
+    try:
+        now  = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+        conn = get_db()
+        rows = conn.execute(
+            '''SELECT n.id, n.text, u.email, u.full_name
+               FROM notes n JOIN users u ON u.id = n.user_id
+               WHERE n.reminder_at IS NOT NULL
+                 AND n.reminder_at <= ?
+                 AND n.reminder_sent = 0
+                 AND u.email IS NOT NULL''',
+            (now,)
+        ).fetchall()
+        for row in rows:
+            note_link = f'{APP_URL.rstrip("/")}/'.rstrip('/') + '/' if APP_URL else ''
+            link_tag  = f'<p style="margin-top:1.2rem"><a href="{note_link}" style="color:#6c63ff">Otevřít aplikaci Notes</a></p>' if note_link else ''
+            html_body = f'''<div style="font-family:sans-serif;font-size:15px;color:#222;max-width:560px">
+<p>Dobrý den, <strong>{row["full_name"]}</strong>,</p>
+<p>máte připomínku k vaší poznámce:</p>
+<div style="border-left:3px solid #6c63ff;padding:.6rem 1rem;background:#f8f8ff;border-radius:0 8px 8px 0;margin:1rem 0">
+{row["text"] or ""}
+</div>
+{link_tag}
+<p style="font-size:.8rem;color:#aaa;margin-top:1.5rem">Tato zpráva byla odeslána automaticky aplikací Notes.</p>
+</div>'''
+            ok, _ = send_email(row['email'], '🔔 Připomínka z Notes', html_body)
+            if ok:
+                conn.execute('UPDATE notes SET reminder_sent = 1 WHERE id = ?', (row['id'],))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        app.logger.error(f'Reminder scheduler: {e}')
+
+
 def _backup_loop():
     """Background thread: checks every ~50 s against the configured schedule."""
     while True:
@@ -236,6 +309,10 @@ def _backup_loop():
                     do_db_backup()
         except Exception as e:
             app.logger.error(f'Backup scheduler: {e}')
+        try:
+            check_and_send_reminders()
+        except Exception as e:
+            app.logger.error(f'Reminder check: {e}')
         time.sleep(50)
 
 
@@ -314,6 +391,10 @@ def init_db():
         ip           TEXT NOT NULL,
         attempted_at DATETIME NOT NULL DEFAULT (datetime('now', 'localtime')))''')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_ip_attempts ON ip_login_attempts(ip, attempted_at)')
+    conn.execute('''CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        token      TEXT PRIMARY KEY,
+        user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        expires_at DATETIME NOT NULL)''')
     # Migrace starších DB — tabulka notes
     for col, definition in [
         ('updated_at',  'DATETIME'),
@@ -341,6 +422,15 @@ def init_db():
         conn.execute("ALTER TABLE users ADD COLUMN is_blocked INTEGER NOT NULL DEFAULT 0")
     except sqlite3.OperationalError:
         pass
+    # Migrace — připomínky na poznámkách
+    for col, definition in [
+        ('reminder_at',   'DATETIME'),
+        ('reminder_sent', 'INTEGER NOT NULL DEFAULT 0'),
+    ]:
+        try:
+            conn.execute(f'ALTER TABLE notes ADD COLUMN {col} {definition}')
+        except sqlite3.OperationalError:
+            pass
     # Auto-promote teplanm na admin (idempotentní)
     conn.execute("UPDATE users SET role = 'admin' WHERE username = 'teplanm'")
     conn.commit()
@@ -497,7 +587,7 @@ def get_shares_for_notes(conn, note_ids):
 
 def note_select():
     return ('SELECT n.id, n.text, n.created_at, n.updated_at, n.is_pinned, n.is_archived, '
-            'n.is_public, n.user_id, u.full_name AS owner_name '
+            'n.is_public, n.user_id, n.reminder_at, n.reminder_sent, u.full_name AS owner_name '
             'FROM notes n LEFT JOIN users u ON n.user_id = u.id')
 
 
@@ -708,6 +798,75 @@ def auth_register():
 @app.route('/api/auth/logout', methods=['POST'])
 def auth_logout():
     session.clear()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/auth/forgot-password', methods=['POST'])
+def auth_forgot_password():
+    if not email_enabled():
+        return jsonify({'error': 'E-mail není nakonfigurován na serveru'}), 503
+    data  = request.get_json() or {}
+    email = (data.get('email') or '').strip().lower()
+    if not email:
+        return jsonify({'error': 'Zadejte e-mailovou adresu'}), 400
+    conn = get_db()
+    row  = conn.execute('SELECT id, full_name FROM users WHERE email = ?', (email,)).fetchone()
+    if row:
+        import secrets
+        token      = secrets.token_hex(32)
+        expires_at = (datetime.now() + timedelta(hours=1)).strftime('%Y-%m-%d %H:%M:%S')
+        conn.execute('DELETE FROM password_reset_tokens WHERE user_id = ?', (row['id'],))
+        conn.execute('INSERT INTO password_reset_tokens (token, user_id, expires_at) VALUES (?, ?, ?)',
+                     (token, row['id'], expires_at))
+        conn.commit()
+        reset_url = f"{APP_URL.rstrip('/')}/?reset_token={token}"
+        html_body = f'''<div style="font-family:sans-serif;font-size:15px;color:#222;max-width:560px">
+<p>Dobrý den, <strong>{row["full_name"]}</strong>,</p>
+<p>obdrželi jsme žádost o reset hesla pro váš účet v aplikaci Notes.</p>
+<p style="margin:1.5rem 0">
+  <a href="{reset_url}" style="background:#6c63ff;color:#fff;padding:.6rem 1.2rem;border-radius:8px;text-decoration:none;font-weight:600">Resetovat heslo</a>
+</p>
+<p style="color:#888;font-size:.85rem">Odkaz je platný 1 hodinu. Pokud jste o reset nepožádali, ignorujte tento e-mail.</p>
+</div>'''
+        send_email(email, 'Reset hesla — Notes App', html_body)
+    conn.close()
+    # Always return ok to prevent e-mail enumeration
+    return jsonify({'ok': True})
+
+
+@app.route('/api/auth/reset-password', methods=['POST'])
+def auth_reset_password():
+    data    = request.get_json() or {}
+    token   = data.get('token', '')
+    new_pw  = data.get('new_password',  '')
+    new_pw2 = data.get('new_password2', '')
+    if not token or not new_pw or not new_pw2:
+        return jsonify({'error': 'Všechna pole jsou povinná'}), 400
+    if new_pw != new_pw2:
+        return jsonify({'error': 'Hesla se neshodují'}), 400
+    if len(new_pw) < 6:
+        return jsonify({'error': 'Heslo musí mít alespoň 6 znaků'}), 400
+    conn = get_db()
+    row  = conn.execute(
+        'SELECT user_id, expires_at FROM password_reset_tokens WHERE token = ?', (token,)
+    ).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'error': 'Neplatný nebo již použitý odkaz na reset hesla'}), 400
+    try:
+        exp = datetime.strptime(row['expires_at'], '%Y-%m-%d %H:%M:%S')
+    except Exception:
+        exp = datetime.min
+    if exp < datetime.now():
+        conn.execute('DELETE FROM password_reset_tokens WHERE token = ?', (token,))
+        conn.commit()
+        conn.close()
+        return jsonify({'error': 'Odkaz pro reset hesla vypršel. Požádejte o nový.'}), 400
+    conn.execute('UPDATE users SET password_hash = ? WHERE id = ?',
+                 (generate_password_hash(new_pw), row['user_id']))
+    conn.execute('DELETE FROM password_reset_tokens WHERE token = ?', (token,))
+    conn.commit()
+    conn.close()
     return jsonify({'ok': True})
 
 
@@ -1085,6 +1244,69 @@ def toggle_visibility(note_id):
     row = conn.execute(f'{note_select()} WHERE n.id = ?', (note_id,)).fetchone()
     conn.close()
     return jsonify(dict(row))
+
+
+@app.route('/api/notes/<int:note_id>/email', methods=['POST'])
+def email_note(note_id):
+    uid = current_user_id()
+    if not uid:
+        return jsonify({'error': 'Nejste přihlášeni'}), 401
+    if not email_enabled():
+        return jsonify({'error': 'E-mail není nakonfigurován na serveru'}), 503
+    data = request.get_json() or {}
+    to   = (data.get('to') or '').strip()
+    if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', to):
+        return jsonify({'error': 'Neplatný formát e-mailu'}), 400
+    conn = get_db()
+    note = conn.execute(
+        'SELECT n.text, n.user_id, u.full_name AS owner_name '
+        'FROM notes n JOIN users u ON u.id = n.user_id WHERE n.id = ?',
+        (note_id,)
+    ).fetchone()
+    conn.close()
+    if not note:
+        return jsonify({'error': 'Poznámka nenalezena'}), 404
+    if note['user_id'] != uid:
+        return jsonify({'error': 'Přístup odepřen'}), 403
+    note_link = f'{APP_URL.rstrip("/")}/'.rstrip('/') + '/' if APP_URL else ''
+    link_tag  = (f'<p style="margin-top:1.2rem"><a href="{note_link}" '
+                 f'style="color:#6c63ff">Otevřít aplikaci Notes</a></p>') if note_link else ''
+    html_body = f'''<div style="font-family:sans-serif;font-size:15px;color:#222;max-width:560px">
+<p>Uživatel <strong>{note["owner_name"]}</strong> vám sdílí poznámku z aplikace Notes:</p>
+<div style="border-left:3px solid #6c63ff;padding:.6rem 1rem;background:#f8f8ff;border-radius:0 8px 8px 0;margin:1rem 0">
+{note["text"] or ""}
+</div>
+{link_tag}
+<p style="font-size:.8rem;color:#aaa;margin-top:1.5rem">Tato zpráva byla odeslána automaticky aplikací Notes.</p>
+</div>'''
+    ok, err = send_email(to, f'Sdílená poznámka od {note["owner_name"]}', html_body)
+    if ok:
+        return jsonify({'ok': True})
+    return jsonify({'ok': False, 'error': err}), 500
+
+
+@app.route('/api/notes/<int:note_id>/reminder', methods=['PUT'])
+def set_note_reminder(note_id):
+    uid = current_user_id()
+    if not uid:
+        return jsonify({'error': 'Nejste přihlášeni'}), 401
+    data        = request.get_json() or {}
+    reminder_at = data.get('reminder_at')   # UTC ISO string "YYYY-MM-DD HH:MM:SS" or null
+    conn = get_db()
+    note = conn.execute('SELECT user_id FROM notes WHERE id = ?', (note_id,)).fetchone()
+    if not note:
+        conn.close()
+        return jsonify({'error': 'Poznámka nenalezena'}), 404
+    if note['user_id'] != uid:
+        conn.close()
+        return jsonify({'error': 'Přístup odepřen'}), 403
+    conn.execute(
+        'UPDATE notes SET reminder_at = ?, reminder_sent = 0 WHERE id = ?',
+        (reminder_at, note_id)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True, 'reminder_at': reminder_at})
 
 
 @app.route('/api/settings', methods=['GET'])
