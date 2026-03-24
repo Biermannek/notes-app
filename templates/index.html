@@ -229,6 +229,18 @@
     .admin-users-table td{padding:.65rem .8rem;color:#333;vertical-align:middle}
     .admin-users-table td.col-num{text-align:right;color:#888}
     .admin-users-table thead th.col-num{text-align:right}
+    .admin-users-table tr.row-blocked td{color:#bbb}
+    .admin-users-table tr.row-blocked{background:#fff8f8}
+    .admin-users-table tr.row-blocked:hover{background:#fff0f0}
+    .user-blocked-badge{display:inline-block;padding:.15rem .45rem;border-radius:20px;font-size:.72rem;font-weight:700;background:#fee2e2;color:#dc2626;white-space:nowrap;margin-left:.4rem}
+    .btn-admin-action{padding:.28rem .6rem;font-size:.78rem;font-weight:600;border:1.5px solid;border-radius:7px;cursor:pointer;background:#fff;transition:all .15s;white-space:nowrap}
+    .btn-admin-action.edit{border-color:#e0e0e0;color:#555}
+    .btn-admin-action.edit:hover{border-color:#6c63ff;color:#6c63ff}
+    .btn-admin-action.block{border-color:#fecaca;color:#dc2626}
+    .btn-admin-action.block:hover{background:#fee2e2}
+    .btn-admin-action.unblock{border-color:#bbf7d0;color:#16a34a}
+    .btn-admin-action.unblock:hover{background:#dcfce7}
+    .col-actions{text-align:right;white-space:nowrap}
 
     /* ── Toast ── */
     .toast{position:fixed;bottom:1.5rem;right:1.5rem;background:#1a1a2e;color:#fff;padding:.75rem 1.2rem;border-radius:10px;font-size:.9rem;opacity:0;transform:translateY(10px);transition:all .3s;pointer-events:none;z-index:999}
@@ -800,6 +812,7 @@
               <th data-col="created_at" onclick="sortAdminUsers('created_at')">Registrace<span class="sort-arrow">↕</span></th>
               <th data-col="timezone" onclick="sortAdminUsers('timezone')">Časová zóna<span class="sort-arrow">↕</span></th>
               <th data-col="note_count" class="col-num" onclick="sortAdminUsers('note_count')">Poznámky<span class="sort-arrow">↕</span></th>
+              <th class="col-actions"></th>
             </tr>
           </thead>
           <tbody id="adminUsersTable"></tbody>
@@ -930,6 +943,31 @@
   </div>
 </div>
 
+<!-- Modal: editace uživatele (admin) -->
+<div class="modal-overlay" id="editUserModal">
+  <div class="modal-box">
+    <div class="modal-title">✏️ Upravit uživatele</div>
+    <div class="modal-body" style="margin-top:.75rem">
+      <div class="auth-field" style="margin-bottom:.85rem">
+        <label for="euFullName">Jméno a příjmení</label>
+        <input type="text" id="euFullName" placeholder="Jméno a příjmení" autocomplete="off"/>
+      </div>
+      <div class="auth-field" style="margin-bottom:.25rem">
+        <label for="euRole">Role v systému</label>
+        <select id="euRole" class="settings-select" style="width:100%;max-width:100%">
+          <option value="user">Uživatel</option>
+          <option value="admin">Administrátor</option>
+        </select>
+      </div>
+      <div id="euError" class="auth-error" style="margin-top:.65rem"></div>
+    </div>
+    <div class="modal-actions" style="margin-top:1.25rem">
+      <button class="btn btn-primary" id="euSubmitBtn" style="margin-top:0" onclick="submitEditUser()">Uložit změny</button>
+      <button class="btn-modal-stay" onclick="closeEditUser()">Zrušit</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: obnova zálohy -->
 <div class="modal-overlay" id="restoreModal">
   <div class="modal-box">
@@ -981,6 +1019,40 @@ let allTags         = [];          // [{name,count}]
 let activeFiltTags  = [];          // tagy ve filtru poznámek
 let tagMode         = 'or';
 let selectedStatTags = new Set();  // tagy vybrané ve statistikách
+
+// ── Global fetch interceptor — detekce zablokovaného účtu ─────────────────
+(function() {
+  const _orig = window.fetch;
+  window.fetch = async function(...args) {
+    const resp = await _orig(...args);
+    if (resp.status === 401) {
+      const clone = resp.clone();
+      try {
+        const data = await clone.json();
+        if (data.code === 'account_blocked') {
+          currentUser = null;
+          currentSettings = { show_public_notes: 1, accept_shares: 1, timezone: 'UTC' };
+          updateTopbar();
+          resetAppState();
+          _doShowPage('notes');
+          // Zobraz trvalou zprávu (ne toast — ten zmizí)
+          const banner = document.getElementById('anonBanner');
+          if (banner) {
+            const warn = document.getElementById('blockedWarning');
+            if (!warn) {
+              const el = document.createElement('div');
+              el.id = 'blockedWarning';
+              el.style.cssText = 'background:#fee2e2;border:1.5px solid #fca5a5;border-radius:10px;padding:.75rem 1rem;margin-bottom:1rem;color:#dc2626;font-weight:600;font-size:.9rem';
+              el.textContent = '⛔ Váš účet byl zablokován. Kontaktujte administrátora pro reaktivaci.';
+              banner.insertBefore(el, banner.firstChild);
+            }
+          }
+        }
+      } catch(e) {}
+    }
+    return resp;
+  };
+})();
 
 // ── Home navigation ───────────────────────────────────────────────────────
 function goHome() {
@@ -1453,14 +1525,14 @@ let _adminUsersSort = { col: null, dir: null }; // dir: null | 'asc' | 'desc'
 async function loadAdminUsers() {
   const tbody = document.getElementById('adminUsersTable');
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#aaa;padding:1.5rem">Načítám…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#aaa;padding:1.5rem">Načítám…</td></tr>';
   try {
     const r = await fetch('/api/admin/users');
-    if (!r.ok) { tbody.innerHTML = '<tr><td colspan="7" style="color:#e53e3e;padding:1rem">Chyba načtení uživatelů.</td></tr>'; return; }
+    if (!r.ok) { tbody.innerHTML = '<tr><td colspan="8" style="color:#e53e3e;padding:1rem">Chyba načtení uživatelů.</td></tr>'; return; }
     _adminUsersData = await r.json();
     renderAdminUsersTable();
   } catch(e) {
-    tbody.innerHTML = '<tr><td colspan="7" style="color:#e53e3e;padding:1rem">Chyba spojení.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="color:#e53e3e;padding:1rem">Chyba spojení.</td></tr>';
   }
 }
 
@@ -1498,7 +1570,7 @@ function renderAdminUsersTable() {
   }
 
   if (!_adminUsersData.length) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#aaa;padding:1.5rem">Žádní uživatelé</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#aaa;padding:1.5rem">Žádní uživatelé</td></tr>';
     return;
   }
 
@@ -1516,19 +1588,26 @@ function renderAdminUsersTable() {
   }
 
   tbody.innerHTML = data.map(u => {
-    const badge = u.role === 'admin'
+    const isSelf = currentUser && u.id === currentUser.id;
+    const roleBadge = u.role === 'admin'
       ? `<span class="user-role-badge admin">admin</span>`
       : `<span class="user-role-badge user">uživatel</span>`;
+    const blockedBadge = u.is_blocked ? `<span class="user-blocked-badge">Zablokován</span>` : '';
     const created = u.created_at ? fmt(u.created_at) : '—';
     const tz = u.timezone || 'UTC';
-    return `<tr>
-      <td>${escHtml(u.full_name)}</td>
+    const editBtn = `<button class="btn-admin-action edit" onclick="openEditUser(${u.id})" title="Upravit">✏️ Upravit</button>`;
+    const blockBtn = u.is_blocked
+      ? `<button class="btn-admin-action unblock" onclick="toggleBlockUser(${u.id}, false)" title="Odblokovat">🔓 Odblokovat</button>`
+      : (isSelf ? '' : `<button class="btn-admin-action block" onclick="toggleBlockUser(${u.id}, true)" title="Zablokovat">🔒 Zablokovat</button>`);
+    return `<tr class="${u.is_blocked ? 'row-blocked' : ''}">
+      <td>${escHtml(u.full_name)}${blockedBadge}</td>
       <td style="font-family:monospace;color:#555">${escHtml(u.username)}</td>
       <td style="color:#555">${escHtml(u.email || '—')}</td>
-      <td>${badge}</td>
+      <td>${roleBadge}</td>
       <td style="color:#888;font-size:.84rem">${created}</td>
       <td style="color:#888;font-size:.84rem;font-family:monospace">${escHtml(tz)}</td>
       <td class="col-num">${u.note_count ?? 0}</td>
+      <td class="col-actions">${editBtn} ${blockBtn}</td>
     </tr>`;
   }).join('');
 }
@@ -1536,6 +1615,70 @@ function renderAdminUsersTable() {
 function escHtml(s) {
   if (!s) return '';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Admin: editace uživatele ───────────────────────────────────────────────
+let _editUserId = null;
+
+function openEditUser(id) {
+  const u = _adminUsersData.find(x => x.id === id);
+  if (!u) return;
+  _editUserId = id;
+  document.getElementById('euFullName').value = u.full_name || '';
+  document.getElementById('euRole').value = u.role || 'user';
+  const errEl = document.getElementById('euError');
+  errEl.textContent = ''; errEl.classList.remove('visible');
+  document.getElementById('editUserModal').classList.add('visible');
+  setTimeout(() => document.getElementById('euFullName').focus(), 50);
+}
+function closeEditUser() {
+  document.getElementById('editUserModal').classList.remove('visible');
+  _editUserId = null;
+}
+async function submitEditUser() {
+  if (!_editUserId) return;
+  const fullName = document.getElementById('euFullName').value.trim();
+  const role     = document.getElementById('euRole').value;
+  const errEl    = document.getElementById('euError');
+  errEl.textContent = ''; errEl.classList.remove('visible');
+  if (!fullName) { errEl.textContent = 'Jméno nesmí být prázdné'; errEl.classList.add('visible'); return; }
+  const btn = document.getElementById('euSubmitBtn');
+  btn.disabled = true;
+  try {
+    const r = await fetch(`/api/admin/users/${_editUserId}`, {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ full_name: fullName, role })
+    });
+    const d = await r.json();
+    if (!r.ok) { errEl.textContent = d.error || 'Chyba uložení'; errEl.classList.add('visible'); btn.disabled = false; return; }
+    closeEditUser();
+    await loadAdminUsers();
+    showToast('✓ Uživatel upraven');
+  } catch(e) {
+    errEl.textContent = 'Chyba spojení'; errEl.classList.add('visible');
+  }
+  btn.disabled = false;
+}
+
+async function toggleBlockUser(id, block) {
+  const u = _adminUsersData.find(x => x.id === id);
+  if (!u) return;
+  if (block) {
+    const ok = confirm(`Opravdu chcete zablokovat uživatele „${u.full_name}"?\n\nUživatel bude při nejbližší akci automaticky odhlášen.`);
+    if (!ok) return;
+  }
+  try {
+    const r = await fetch(`/api/admin/users/${id}`, {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ is_blocked: block })
+    });
+    const d = await r.json();
+    if (!r.ok) { showToast('❌ ' + (d.error || 'Chyba')); return; }
+    await loadAdminUsers();
+    showToast(block ? `🔒 Uživatel ${u.full_name} zablokován` : `🔓 Uživatel ${u.full_name} odblokován`);
+  } catch(e) {
+    showToast('❌ Chyba spojení');
+  }
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────
@@ -2803,12 +2946,20 @@ document.getElementById('searchInput').addEventListener('keydown', e => {
 // ── Global Escape handler ────────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
+  if (document.getElementById('editUserModal')?.classList.contains('visible')) {
+    closeEditUser(); return;
+  }
   if (document.getElementById('changePwModal')?.classList.contains('visible')) {
     closeChangePassword(); return;
   }
   if (document.getElementById('userDropdown')?.classList.contains('open')) {
     closeUserMenu(); return;
   }
+});
+
+// ── Edit user modal: Enter submits ────────────────────────────────────────────
+document.getElementById('euFullName').addEventListener('keydown', e => {
+  if (e.key === 'Enter') submitEditUser();
 });
 
 // ── Password modal: Enter on last field submits ───────────────────────────────

@@ -336,6 +336,11 @@ def init_db():
         conn.execute("ALTER TABLE user_settings ADD COLUMN timezone TEXT NOT NULL DEFAULT 'UTC'")
     except sqlite3.OperationalError:
         pass
+    # Migrace — blokování uživatelů
+    try:
+        conn.execute("ALTER TABLE users ADD COLUMN is_blocked INTEGER NOT NULL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
     # Auto-promote teplanm na admin (idempotentní)
     conn.execute("UPDATE users SET role = 'admin' WHERE username = 'teplanm'")
     conn.commit()
@@ -344,6 +349,32 @@ def init_db():
 
 init_db()
 start_backup_scheduler()
+
+
+# ── Blocked-user guard ────────────────────────────────────────────────────────
+
+_SKIP_BLOCK_CHECK = {'/api/auth/login', '/api/auth/register', '/api/auth/logout'}
+
+@app.before_request
+def check_blocked_user():
+    """Lazily invalidates sessions of blocked users on their next API call."""
+    if not request.path.startswith('/api/'):
+        return None
+    if request.path in _SKIP_BLOCK_CHECK:
+        return None
+    uid = session.get('user_id')
+    if not uid:
+        return None
+    conn = get_db()
+    row = conn.execute('SELECT is_blocked FROM users WHERE id = ?', (uid,)).fetchone()
+    conn.close()
+    if row and row['is_blocked']:
+        session.clear()
+        return jsonify({
+            'error': 'Váš účet byl zablokován. Kontaktujte administrátora pro reaktivaci.',
+            'code': 'account_blocked'
+        }), 401
+    return None
 
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
@@ -615,7 +646,12 @@ def auth_login():
             return jsonify({'error': 'Nesprávné přihlašovací jméno nebo heslo. Pozor: při dalším neúspěšném pokusu bude přihlášení zablokováno na 5 minut.'}), 401
         return jsonify({'error': 'Nesprávné přihlašovací jméno nebo heslo'}), 401
 
-    # 4) Success – reset failure counter and create session
+    # 4) Check if account is blocked
+    if row['is_blocked']:
+        conn.close()
+        return jsonify({'error': 'Váš účet byl zablokován. Kontaktujte administrátora pro reaktivaci.'}), 403
+
+    # 5) Success – reset failure counter and create session
     reset_login_failures(conn, username)
     conn.close()
     session['user_id'] = row['id']
@@ -1181,6 +1217,7 @@ def admin_get_users():
     conn = get_db()
     rows = conn.execute('''
         SELECT u.id, u.username, u.full_name, u.email, u.role, u.created_at,
+               u.is_blocked,
                COUNT(n.id) AS note_count,
                COALESCE(s.timezone, 'UTC') AS timezone
         FROM users u
@@ -1191,6 +1228,54 @@ def admin_get_users():
     ''').fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
+
+
+@app.route('/api/admin/users/<int:target_id>', methods=['PUT'])
+def admin_update_user(target_id):
+    if not is_admin():
+        return jsonify({'error': 'Přístup odepřen'}), 403
+    me = current_user_id()
+    data = request.get_json() or {}
+    conn = get_db()
+    row = conn.execute('SELECT id, role FROM users WHERE id = ?', (target_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'error': 'Uživatel nenalezen'}), 404
+
+    updates = {}
+
+    if 'full_name' in data:
+        full_name = str(data['full_name']).strip()
+        if not full_name:
+            conn.close()
+            return jsonify({'error': 'Jméno nesmí být prázdné'}), 400
+        updates['full_name'] = full_name
+
+    if 'role' in data:
+        role = data['role']
+        if role not in ('admin', 'user'):
+            conn.close()
+            return jsonify({'error': 'Neplatná role'}), 400
+        if target_id == me and role != 'admin':
+            conn.close()
+            return jsonify({'error': 'Nemůžete si odebrat vlastní roli administrátora'}), 400
+        updates['role'] = role
+
+    if 'is_blocked' in data:
+        is_blocked = 1 if data['is_blocked'] else 0
+        if target_id == me and is_blocked:
+            conn.close()
+            return jsonify({'error': 'Nemůžete zablokovat vlastní účet'}), 400
+        updates['is_blocked'] = is_blocked
+
+    if updates:
+        set_clause = ', '.join(f'{k} = ?' for k in updates)
+        vals = list(updates.values()) + [target_id]
+        conn.execute(f'UPDATE users SET {set_clause} WHERE id = ?', vals)
+        conn.commit()
+
+    conn.close()
+    return jsonify({'ok': True})
 
 
 # ── Backup routes ─────────────────────────────────────────────────────────────
