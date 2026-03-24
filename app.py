@@ -1154,6 +1154,25 @@ def get_tag_stats():
     return jsonify([{'name': r['name'], 'count': r['note_count']} for r in rows])
 
 
+# ── Admin routes ──────────────────────────────────────────────────────────────
+
+@app.route('/api/admin/users', methods=['GET'])
+def admin_get_users():
+    if not is_admin():
+        return jsonify({'error': 'Přístup odepřen'}), 403
+    conn = get_db()
+    rows = conn.execute('''
+        SELECT u.id, u.username, u.full_name, u.email, u.role, u.created_at,
+               COUNT(n.id) AS note_count
+        FROM users u
+        LEFT JOIN notes n ON n.user_id = u.id
+        GROUP BY u.id
+        ORDER BY u.created_at ASC
+    ''').fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+
 # ── Backup routes ─────────────────────────────────────────────────────────────
 
 @app.route('/api/backup/status', methods=['GET'])

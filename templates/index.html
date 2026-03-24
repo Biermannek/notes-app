@@ -212,6 +212,24 @@
     .tag-stat-chip-all{padding:.25rem .7rem;font-size:.78rem;font-weight:600;border:1.5px solid #e0e0e0;border-radius:999px;background:#fff;color:#555;cursor:pointer}
     .tag-stat-chip-all:hover,.tag-stat-chip-all.active{background:#6c63ff;color:#fff;border-color:#6c63ff}
 
+    /* ── Admin ── */
+    .admin-tab-nav{display:flex;gap:.5rem;margin-bottom:1.5rem;border-bottom:2px solid #e0e0e0;padding-bottom:0}
+    .admin-tab-item{padding:.6rem 1rem;font-size:.92rem;font-weight:600;color:#888;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s}
+    .admin-tab-item:hover{color:#6c63ff}
+    .admin-tab-item.active{color:#6c63ff;border-bottom-color:#6c63ff}
+    .admin-panel{display:none}
+    .admin-panel.active{display:block}
+    .user-role-badge{display:inline-block;padding:.2rem .55rem;border-radius:20px;font-size:.76rem;font-weight:600;white-space:nowrap}
+    .user-role-badge.admin{background:#ede9fe;color:#6c63ff}
+    .user-role-badge.user{background:#f0f0f0;color:#666}
+    .admin-users-table-wrap{overflow-x:auto;margin-top:.5rem}
+    .admin-users-table{width:100%;border-collapse:collapse;font-size:.88rem}
+    .admin-users-table thead th{text-align:left;padding:.6rem .8rem;font-size:.78rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #e0e0e0;background:#fafafa;white-space:nowrap}
+    .admin-users-table tbody tr{border-bottom:1px solid #f0f0f0;transition:background .12s}
+    .admin-users-table tbody tr:hover{background:#faf9ff}
+    .admin-users-table td{padding:.65rem .8rem;color:#333;vertical-align:middle}
+    .admin-users-table td.col-num{text-align:right;color:#888}
+
     /* ── Toast ── */
     .toast{position:fixed;bottom:1.5rem;right:1.5rem;background:#1a1a2e;color:#fff;padding:.75rem 1.2rem;border-radius:10px;font-size:.9rem;opacity:0;transform:translateY(10px);transition:all .3s;pointer-events:none;z-index:999}
     .toast.show{opacity:1;transform:translateY(0)}
@@ -397,6 +415,7 @@
     <div class="nav-sub" id="navTagList"></div>
     <div class="nav-item" onclick="showPage('stats')" id="nav-stats" style="display:none"><span class="nav-icon">📊</span> Statistiky</div>
     <div class="nav-item" onclick="showPage('settings')" id="nav-settings" style="display:none"><span class="nav-icon">⚙️</span> Nastavení</div>
+    <div class="nav-item" onclick="showPage('admin')" id="nav-admin" style="display:none"><span class="nav-icon">🛡️</span> Administrace</div>
     <div class="sidebar-footer">Verze: {{ version }}</div>
   </div>
 </nav>
@@ -686,95 +705,126 @@
       </div>
     </div>
 
-    <!-- Zálohy (admin only) -->
-    <div class="card" id="backupCard" style="display:none">
-      <h3 style="font-size:1.05rem;font-weight:700;color:#1a1a2e;margin-bottom:1rem">🗄️ Zálohy databáze</h3>
+  </div>
 
-      <!-- Stav -->
-      <div class="backup-status-row">
-        <span id="backupBadge" class="backup-badge off">● Zálohy vypnuty</span>
-        <span id="backupDirLabel" style="font-size:.82rem;color:#888;font-family:monospace"></span>
-      </div>
-      <div style="font-size:.82rem;color:#888;margin-bottom:1.1rem">
-        Poslední záloha: <strong id="backupLastTime">—</strong>
-        &nbsp;·&nbsp; Počet záloh: <strong id="backupCount">0</strong>
-      </div>
+  <!-- Admin page -->
+  <div class="page" id="page-admin">
+    <h2 class="page-title">🛡️ Administrace</h2>
+    <div class="admin-tab-nav">
+      <div class="admin-tab-item active" id="admin-tab-users" onclick="showAdminTab('users')">👥 Uživatelé</div>
+      <div class="admin-tab-item" id="admin-tab-backups" onclick="showAdminTab('backups')">🗄️ Zálohy</div>
+    </div>
 
-      <!-- Plán zálohování -->
-      <div style="font-size:.88rem;font-weight:600;color:#444;margin-bottom:.5rem">Plán automatického zálohování</div>
-      <div class="backup-schedule-row">
-        <span class="backup-schedule-label">Frekvence:</span>
-        <select id="schedFreq" onchange="onScheduleFreqChange()">
-          <option value="hourly">Každou hodinu</option>
-          <option value="daily" selected>Každý den</option>
-          <option value="weekly">Každý týden</option>
-          <option value="monthly">Každý měsíc</option>
-        </select>
-        <!-- Hodina: minute -->
-        <span class="backup-schedule-label" id="lblMinute" style="display:none">v minutu:</span>
-        <input type="number" id="schedMinute" min="0" max="59" value="0" style="width:60px;display:none"/>
-        <!-- Daily/weekly/monthly: time -->
-        <span class="backup-schedule-label" id="lblTime">v čas:</span>
-        <input type="time" id="schedTime" value="02:00"/>
-        <!-- Weekly: weekday -->
-        <span class="backup-schedule-label" id="lblWeekday" style="display:none">den:</span>
-        <select id="schedWeekday" style="display:none">
-          <option value="0">Pondělí</option>
-          <option value="1">Úterý</option>
-          <option value="2">Středa</option>
-          <option value="3">Čtvrtek</option>
-          <option value="4">Pátek</option>
-          <option value="5">Sobota</option>
-          <option value="6">Neděle</option>
-        </select>
-        <!-- Monthly: day_of_month -->
-        <span class="backup-schedule-label" id="lblDayOfMonth" style="display:none">den v měsíci:</span>
-        <input type="number" id="schedDayOfMonth" min="1" max="28" value="1" style="width:60px;display:none"/>
-        <button class="btn-backup primary" onclick="saveSchedule()" style="margin-left:.25rem">💾 Uložit plán</button>
-        <span id="schedSavedMsg" style="font-size:.82rem;color:#10b981;display:none">✓ Uloženo</span>
+    <!-- Podzáložka: Uživatelé -->
+    <div class="admin-panel active" id="adminpanel-users">
+      <div class="admin-users-table-wrap">
+        <table class="admin-users-table">
+          <thead>
+            <tr>
+              <th>Jméno a příjmení</th>
+              <th>Uživatelské jméno</th>
+              <th>E-mail</th>
+              <th>Role</th>
+              <th>Registrace</th>
+              <th class="col-num">Poznámky</th>
+            </tr>
+          </thead>
+          <tbody id="adminUsersTable"></tbody>
+        </table>
       </div>
+    </div>
 
-      <!-- Manuální akce -->
-      <div class="backup-actions">
-        <button class="btn-backup primary" id="btnBackupNow" onclick="triggerBackup()">⬇ Zálohovat teď</button>
-        <button class="btn-backup secondary" onclick="downloadDb()">💾 Stáhnout DB</button>
-        <button class="btn-backup secondary" onclick="exportJson()">📄 Exportovat JSON</button>
-      </div>
+    <!-- Podzáložka: Zálohy -->
+    <div class="admin-panel" id="adminpanel-backups">
+      <div class="card" id="backupCard">
+        <h3 style="font-size:1.05rem;font-weight:700;color:#1a1a2e;margin-bottom:1rem">🗄️ Zálohy databáze</h3>
 
-      <!-- Import JSON -->
-      <div style="margin-bottom:1.25rem">
-        <div style="font-size:.88rem;font-weight:600;color:#444;margin-bottom:.4rem">Import z JSON zálohy</div>
-        <div style="font-size:.8rem;color:#888;margin-bottom:.5rem">Importuje poznámky z JSON souboru. Existující data <strong>nebudou přepsána</strong> — přidají se nové záznamy.</div>
-        <div class="backup-import-row">
-          <input type="file" id="importFileInput" accept=".json" style="font-size:.85rem" onchange="importJsonSelected()"/>
+        <!-- Stav -->
+        <div class="backup-status-row">
+          <span id="backupBadge" class="backup-badge off">● Zálohy vypnuty</span>
+          <span id="backupDirLabel" style="font-size:.82rem;color:#888;font-family:monospace"></span>
         </div>
-        <div id="importPreview" style="display:none;margin-top:.5rem;font-size:.82rem;color:#555;background:#f8f8ff;padding:.5rem .75rem;border-radius:8px;border:1.5px solid #e0e0e0"></div>
-        <button class="btn-backup danger" id="btnImport" style="display:none;margin-top:.6rem" onclick="doImportJson()">📥 Importovat</button>
-        <div class="backup-msg" id="importMsg"></div>
-      </div>
-
-      <!-- Seznam souborů -->
-      <div id="backupFileSection" style="display:none">
-        <div style="font-size:.88rem;font-weight:600;color:#444;margin-bottom:.5rem">Uložené zálohy na NASu</div>
-        <div class="backup-table-wrap">
-          <table class="backup-table">
-            <thead>
-              <tr>
-                <th>Název zálohy</th>
-                <th>Kdy vznikla</th>
-                <th>Kdo vytvořil</th>
-                <th class="col-num">Uživatelé</th>
-                <th class="col-num">Poznámky</th>
-                <th>Verze</th>
-                <th class="col-size">Velikost</th>
-                <th class="col-action"></th>
-              </tr>
-            </thead>
-            <tbody id="backupFileList"></tbody>
-          </table>
+        <div style="font-size:.82rem;color:#888;margin-bottom:1.1rem">
+          Poslední záloha: <strong id="backupLastTime">—</strong>
+          &nbsp;·&nbsp; Počet záloh: <strong id="backupCount">0</strong>
         </div>
+
+        <!-- Plán zálohování -->
+        <div style="font-size:.88rem;font-weight:600;color:#444;margin-bottom:.5rem">Plán automatického zálohování</div>
+        <div class="backup-schedule-row">
+          <span class="backup-schedule-label">Frekvence:</span>
+          <select id="schedFreq" onchange="onScheduleFreqChange()">
+            <option value="hourly">Každou hodinu</option>
+            <option value="daily" selected>Každý den</option>
+            <option value="weekly">Každý týden</option>
+            <option value="monthly">Každý měsíc</option>
+          </select>
+          <!-- Hodina: minute -->
+          <span class="backup-schedule-label" id="lblMinute" style="display:none">v minutu:</span>
+          <input type="number" id="schedMinute" min="0" max="59" value="0" style="width:60px;display:none"/>
+          <!-- Daily/weekly/monthly: time -->
+          <span class="backup-schedule-label" id="lblTime">v čas:</span>
+          <input type="time" id="schedTime" value="02:00"/>
+          <!-- Weekly: weekday -->
+          <span class="backup-schedule-label" id="lblWeekday" style="display:none">den:</span>
+          <select id="schedWeekday" style="display:none">
+            <option value="0">Pondělí</option>
+            <option value="1">Úterý</option>
+            <option value="2">Středa</option>
+            <option value="3">Čtvrtek</option>
+            <option value="4">Pátek</option>
+            <option value="5">Sobota</option>
+            <option value="6">Neděle</option>
+          </select>
+          <!-- Monthly: day_of_month -->
+          <span class="backup-schedule-label" id="lblDayOfMonth" style="display:none">den v měsíci:</span>
+          <input type="number" id="schedDayOfMonth" min="1" max="28" value="1" style="width:60px;display:none"/>
+          <button class="btn-backup primary" onclick="saveSchedule()" style="margin-left:.25rem">💾 Uložit plán</button>
+          <span id="schedSavedMsg" style="font-size:.82rem;color:#10b981;display:none">✓ Uloženo</span>
+        </div>
+
+        <!-- Manuální akce -->
+        <div class="backup-actions">
+          <button class="btn-backup primary" id="btnBackupNow" onclick="triggerBackup()">⬇ Zálohovat teď</button>
+          <button class="btn-backup secondary" onclick="downloadDb()">💾 Stáhnout DB</button>
+          <button class="btn-backup secondary" onclick="exportJson()">📄 Exportovat JSON</button>
+        </div>
+
+        <!-- Import JSON -->
+        <div style="margin-bottom:1.25rem">
+          <div style="font-size:.88rem;font-weight:600;color:#444;margin-bottom:.4rem">Import z JSON zálohy</div>
+          <div style="font-size:.8rem;color:#888;margin-bottom:.5rem">Importuje poznámky z JSON souboru. Existující data <strong>nebudou přepsána</strong> — přidají se nové záznamy.</div>
+          <div class="backup-import-row">
+            <input type="file" id="importFileInput" accept=".json" style="font-size:.85rem" onchange="importJsonSelected()"/>
+          </div>
+          <div id="importPreview" style="display:none;margin-top:.5rem;font-size:.82rem;color:#555;background:#f8f8ff;padding:.5rem .75rem;border-radius:8px;border:1.5px solid #e0e0e0"></div>
+          <button class="btn-backup danger" id="btnImport" style="display:none;margin-top:.6rem" onclick="doImportJson()">📥 Importovat</button>
+          <div class="backup-msg" id="importMsg"></div>
+        </div>
+
+        <!-- Seznam souborů -->
+        <div id="backupFileSection" style="display:none">
+          <div style="font-size:.88rem;font-weight:600;color:#444;margin-bottom:.5rem">Uložené zálohy na NASu</div>
+          <div class="backup-table-wrap">
+            <table class="backup-table">
+              <thead>
+                <tr>
+                  <th>Název zálohy</th>
+                  <th>Kdy vznikla</th>
+                  <th>Kdo vytvořil</th>
+                  <th class="col-num">Uživatelé</th>
+                  <th class="col-num">Poznámky</th>
+                  <th>Verze</th>
+                  <th class="col-size">Velikost</th>
+                  <th class="col-action"></th>
+                </tr>
+              </thead>
+              <tbody id="backupFileList"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="backup-msg" id="backupMsg"></div>
       </div>
-      <div class="backup-msg" id="backupMsg"></div>
     </div>
   </div>
 
@@ -1059,7 +1109,6 @@ async function loadSettings() {
   } catch (e) {}
   settingsDirty = false;
   renderSettingsUI();
-  await loadBackupStatus();
 }
 function renderSettingsUI() {
   const spY = document.getElementById('set-spn-yes');
@@ -1303,6 +1352,56 @@ async function doImportJson() {
   btn.disabled = false;
 }
 
+// ── Admin ─────────────────────────────────────────────────────────────────
+let _activeAdminTab = 'users';
+function loadAdminPage() {
+  showAdminTab(_activeAdminTab);
+  if (_activeAdminTab === 'users') loadAdminUsers();
+  if (_activeAdminTab === 'backups') loadBackupStatus();
+}
+function showAdminTab(tab) {
+  _activeAdminTab = tab;
+  document.querySelectorAll('.admin-tab-item').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.admin-panel').forEach(el => el.classList.remove('active'));
+  const tabEl = document.getElementById('admin-tab-' + tab);
+  const panelEl = document.getElementById('adminpanel-' + tab);
+  if (tabEl) tabEl.classList.add('active');
+  if (panelEl) panelEl.classList.add('active');
+  if (tab === 'users') loadAdminUsers();
+  if (tab === 'backups') loadBackupStatus();
+}
+async function loadAdminUsers() {
+  const tbody = document.getElementById('adminUsersTable');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#aaa;padding:1.5rem">Načítám…</td></tr>';
+  try {
+    const r = await fetch('/api/admin/users');
+    if (!r.ok) { tbody.innerHTML = '<tr><td colspan="6" style="color:#e53e3e;padding:1rem">Chyba načtení uživatelů.</td></tr>'; return; }
+    const users = await r.json();
+    if (!users.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#aaa;padding:1.5rem">Žádní uživatelé</td></tr>'; return; }
+    tbody.innerHTML = users.map(u => {
+      const badge = u.role === 'admin'
+        ? `<span class="user-role-badge admin">admin</span>`
+        : `<span class="user-role-badge user">uživatel</span>`;
+      const created = u.created_at ? u.created_at.slice(0, 10) : '—';
+      return `<tr>
+        <td>${escHtml(u.full_name)}</td>
+        <td style="font-family:monospace;color:#555">${escHtml(u.username)}</td>
+        <td style="color:#555">${escHtml(u.email || '—')}</td>
+        <td>${badge}</td>
+        <td style="color:#888;font-size:.84rem">${created}</td>
+        <td class="col-num">${u.note_count ?? 0}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    tbody.innerHTML = '<tr><td colspan="6" style="color:#e53e3e;padding:1rem">Chyba spojení.</td></tr>';
+  }
+}
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 // ── Auth ──────────────────────────────────────────────────────────────────
 function updateTopbar() {
   const userDiv     = document.getElementById('topbarUser');
@@ -1312,6 +1411,7 @@ function updateTopbar() {
   const privRow      = document.getElementById('newNotePrivacyRow');
   const settingsNav  = document.getElementById('nav-settings');
   const statsNav     = document.getElementById('nav-stats');
+  const adminNav     = document.getElementById('nav-admin');
   const anonBanner   = document.getElementById('anonBanner');
   const noteFormCard = document.getElementById('noteFormCard');
   const archiveBtn   = document.getElementById('btnArchiveToggle');
@@ -1325,6 +1425,7 @@ function updateTopbar() {
     if (privRow)        privRow.style.display       = 'flex';
     if (settingsNav)    settingsNav.style.display    = 'flex';
     if (statsNav)       statsNav.style.display       = 'flex';
+    if (adminNav)       adminNav.style.display       = isAdmin() ? 'flex' : 'none';
     if (anonBanner)     anonBanner.style.display     = 'none';
     if (noteFormCard)   noteFormCard.style.display   = 'block';
     if (archiveBtn)     archiveBtn.style.display     = '';
@@ -1336,6 +1437,7 @@ function updateTopbar() {
     if (privRow)        privRow.style.display       = 'none';
     if (settingsNav)    settingsNav.style.display    = 'none';
     if (statsNav)       statsNav.style.display       = 'none';
+    if (adminNav)       adminNav.style.display       = 'none';
     if (anonBanner)     anonBanner.style.display     = 'block';
     if (noteFormCard)   noteFormCard.style.display   = 'none';
     if (archiveBtn)     archiveBtn.style.display     = 'none';
@@ -1700,6 +1802,7 @@ function _doShowPage(page) {
   if (navEl) navEl.classList.add('active');
   if (page === 'stats') { loadAllTags().then(buildTagStatFilter); loadDailyStats(); }
   if (page === 'settings') loadSettings();
+  if (page === 'admin') loadAdminPage();
   if (page === 'login') setTimeout(() => { const el = document.getElementById('loginUsername'); if (el) el.focus(); }, 50);
   if (page === 'register') setTimeout(() => { const el = document.getElementById('regUsername'); if (el) el.focus(); }, 50);
   closeMobileMenu();
