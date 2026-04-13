@@ -498,7 +498,7 @@
       <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end">
         <div style="flex:1;min-width:140px">
           <div style="font-size:.82rem;font-weight:600;color:#444;margin-bottom:.3rem">Uživatelské jméno</div>
-          <input id="inlineLoginUsername" type="text" placeholder="uživatelské jméno" autocomplete="username"
+          <input id="inlineLoginUsername" type="text" placeholder="jméno nebo e-mail" autocomplete="username"
                  style="width:100%;padding:.65rem .9rem;border:2px solid #e0e0e0;border-radius:10px;font-size:.95rem;font-family:inherit;color:#1a1a2e;transition:border-color .2s;background:#fff;outline:none"
                  onfocus="this.style.borderColor='#6c63ff'" onblur="this.style.borderColor='#e0e0e0'"
                  onkeydown="if(event.key==='Enter')doInlineLogin()"/>
@@ -665,8 +665,8 @@
         <div class="auth-subtitle">Přihlaste se ke svému účtu</div>
         <div class="auth-error" id="loginError"></div>
         <div class="auth-field">
-          <label>Uživatelské jméno</label>
-          <input id="loginUsername" type="text" placeholder="Zadejte uživatelské jméno" autocomplete="username"/>
+          <label>Přihlašovací jméno nebo e-mail</label>
+          <input id="loginUsername" type="text" placeholder="Zadejte přihlašovací jméno nebo e-mail" autocomplete="username"/>
         </div>
         <div class="auth-field">
           <label>Heslo</label>

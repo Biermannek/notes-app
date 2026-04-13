@@ -702,13 +702,22 @@ def auth_me():
 @app.route('/api/auth/login', methods=['POST'])
 def auth_login():
     data     = request.get_json() or {}
-    username = (data.get('username') or '').strip().lower()
+    login    = (data.get('username') or '').strip()
     password = data.get('password') or ''
-    if not username or not password:
-        return jsonify({'error': 'Vyplňte přihlašovací jméno a heslo'}), 400
+    if not login or not password:
+        return jsonify({'error': 'Vyplňte přihlašovací jméno nebo e-mail a heslo'}), 400
 
     ip   = get_client_ip()
     conn = get_db()
+
+    # Resolve email → username if user typed an e-mail address
+    if '@' in login:
+        row_lookup = conn.execute(
+            'SELECT username FROM users WHERE LOWER(email) = ?', (login.lower(),)
+        ).fetchone()
+        username = row_lookup['username'] if row_lookup else login.lower()
+    else:
+        username = login.lower()
 
     # 1) Per-user lockout check
     is_locked, locked_until = check_user_lockout(conn, username)
